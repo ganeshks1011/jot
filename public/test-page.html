@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Writeflo — Extension Test Page</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --text: #0f172a;
+        --muted: #64748b;
+        --border: #e2e8f0;
+        --accent: #6366f1;
+        --accent-2: #8b5cf6;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #020617;
+          --card: #0f172a;
+          --text: #e2e8f0;
+          --muted: #94a3b8;
+          --border: #1e293b;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 40px 20px 80px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      }
+      h1 {
+        font-size: 24px;
+        margin: 12px 0 4px;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 24px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px;
+        margin-bottom: 18px;
+      }
+      .card h2 {
+        font-size: 15px;
+        margin: 0 0 2px;
+      }
+      .card .field-type {
+        font-size: 12px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        margin: 0 0 12px;
+      }
+      .field {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+        font-family: inherit;
+        padding: 10px 12px;
+        resize: vertical;
+        outline: none;
+      }
+      .field:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+      }
+      [contenteditable] {
+        min-height: 96px;
+      }
+      [contenteditable]:empty::before {
+        content: attr(data-placeholder);
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .btn:hover {
+        background: rgba(99, 102, 241, 0.1);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .steps {
+        margin: 0 0 24px;
+        padding-left: 18px;
+      }
+      .steps li {
+        margin-bottom: 6px;
+      }
+      kbd {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-bottom-width: 2px;
+        border-radius: 6px;
+        padding: 1px 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="badge">✨ Writeflo</span>
+      <h1>Extension test page</h1>
+      <p class="sub">
+        Served over HTTP so Chrome's <code>activeTab</code> grant covers it when you invoke Jot. Open in Chrome with the
+        unpacked extension loaded.
+      </p>
+
+      <ol class="steps">
+        <li>Load the unpacked extension from <kbd>.output/chrome-mv3</kbd> in <kbd>chrome://extensions</kbd>.</li>
+        <li>Focus any field below, or click <strong>Select text</strong> to highlight its contents.</li>
+        <li>Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> (macOS: <kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>) or click the Jot toolbar icon to open the overlay.</li>
+        <li>Choose a style with ←/→, press <kbd>Enter</kbd> to rewrite, type a tweak and press <kbd>Enter</kbd>, then press <kbd>Enter</kbd> on the content box to insert it back into the field.</li>
+        <li>Pressing the shortcut again closes the overlay and removes Jot from the page entirely.</li>
+      </ol>
+
+      <div class="card">
+        <h2>Textarea</h2>
+        <p class="field-type">&lt;textarea&gt;</p>
+        <textarea id="ta" class="field" rows="5">Just checking in — I was hoping we could sync up on the Q3 plan. Let me know what works for you and I'll grab a slot.</textarea>
+        <div class="actions">
+          <button class="btn" data-target="ta">Select text</button>
+          <button class="btn" data-clear="ta">Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Single-line input</h2>
+        <p class="field-type">&lt;input type="text"&gt;</p>
+        <input id="inp" class="field" type="text" value="hey! can you send the deck over? also, lmk if thursday works" />
+        <div class="actions">
+          <button class="btn" data-target="inp">Select text</button>
+          <button class="btn" data-clear="inp">Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Contenteditable</h2>
+        <p class="field-type">div[contenteditable="true"]</p>
+        <div
+          id="ce"
+          class="field"
+          contenteditable="true"
+          data-placeholder="This field behaves like a comment box (e.g. LinkedIn, forums)…"
+        >
+          Really appreciate the detailed write-up — the section on pricing was super helpful. One suggestion: the intro could be a bit shorter.
+        </div>
+        <div class="actions">
+          <button class="btn" data-target="ce">Select text</button>
+          <button class="btn" data-clear="ce">Clear</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Trigger with no selection</h2>
+        <p class="field-type">shortcut on a focused field</p>
+        <p class="sub" style="margin: 0">
+          Focus a field without selecting anything, then press the shortcut. The overlay opens in idle state —
+          select text on the page first if you want to rewrite an existing selection.
+        </p>
+      </div>
+    </main>
+
+    <script>
+      function selectAll(el) {
+        el.focus();
+        if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+          el.select();
+        } else {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+
+      document.querySelectorAll("[data-target]").forEach((btn) => {
+        btn.addEventListener("click", () => selectAll(document.getElementById(btn.dataset.target)));
+      });
+
+      document.querySelectorAll("[data-clear]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const el = document.getElementById(btn.dataset.clear);
+          el.focus();
+          if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+            el.value = "";
+          } else {
+            el.textContent = "";
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

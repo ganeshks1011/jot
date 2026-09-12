@@ -1,0 +1,88 @@
+@layer theme, base, components, utilities;
+
+/* Selective HeroUI v3 styles — only the components the options page uses. */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@heroui/styles/base/base.css" layer(base);
+@import "@heroui/styles/base/scrollbar.css" layer(base);
+@import "@heroui/styles/themes/shared/theme.css" layer(theme);
+@import "@heroui/styles/themes/default/variables.css" layer(theme);
+@import "@heroui/styles/components/button.css" layer(components);
+@import "@heroui/styles/components/input.css" layer(components);
+@import "@heroui/styles/components/kbd.css" layer(components);
+@import "@heroui/styles/components/list-box.css" layer(components);
+@import "@heroui/styles/components/popover.css" layer(components);
+@import "@heroui/styles/components/modal.css" layer(components);
+@import "@heroui/styles/components/select.css" layer(components);
+@import "@heroui/styles/components/slider.css" layer(components);
+@import "@heroui/styles/components/switch.css" layer(components);
+@import "@heroui/styles/components/tabs.css" layer(components);
+@import "@heroui/styles/components/textarea.css" layer(components);
+@import "@heroui/styles/utilities";
+@import "@heroui/styles/variants";
+
+@layer base {
+  :root {
+    --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-jot: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  }
+  :root,
+  [data-theme="light"] {
+    --accent: oklch(0.6204 0.195 253.83);
+    --accent-foreground: oklch(0.99 0 0);
+    --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
+    --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+    --accent-soft-foreground: oklch(0.42 0.17 262);
+    --accent-soft-hover: color-mix(in oklab, var(--accent) 20%, transparent);
+    --field-border-width: 1px;
+    --radius: 0.5rem;
+  }
+
+  [data-theme="dark"] {
+    --accent: oklch(0.6204 0.195 253.83);
+    --accent-foreground: oklch(0.99 0 0);
+    --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
+    --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+    --accent-soft-foreground: oklch(0.87 0.11 262);
+    --accent-soft-hover: color-mix(in oklab, var(--accent) 22%, transparent);
+    --field-border-width: 1px;
+  }
+
+  html {
+    font-family: var(--font-sans);
+  }
+  .font-jot {
+    font-family: var(--font-jot);
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Compact slider for the Teach Jot section — mirrors onboarding/style.css. */
+@layer components {
+  [data-slot="slider"] {
+    --slider-track-height: 4px;
+    --slider-thumb-size: 14px;
+    gap: 0.375rem;
+    touch-action: pan-y;
+  }
+  [data-slot="slider-track"] {
+    height: var(--slider-track-height);
+  }
+  [data-slot="slider-thumb"] {
+    width: var(--slider-thumb-size);
+    height: var(--slider-thumb-size);
+  }
+}
