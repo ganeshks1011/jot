@@ -1,0 +1,1 @@
+export { normalizeRewriteOutput } from "./normalizeOutput";
