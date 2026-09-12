@@ -1,5 +1,6 @@
 import { browser } from "wxt/browser";
 import { defineUnlistedScript } from "wxt/utils/define-unlisted-script";
+import { liveRichTextDeps, replaceRichText, resolveFrameworkRoot } from "@/lib/editors/richText";
 import {
   alignMentionEntities,
   isSlackComposer,
@@ -721,6 +722,16 @@ function createHost(): HostController {
       return { ok: result.ok, diagnostics: result.diagnostics };
     }
 
+    // Model-driven editors (Lexical, Slate, ProseMirror/TipTap, Quill,
+    // Draft.js, CKEditor) reconcile the DOM against internal state, so range
+    // surgery is silently reverted. Verified editing input instead.
+    const richTextDeps = liveRichTextDeps(document, window, activeField);
+    if (resolveFrameworkRoot(richTextDeps)) {
+      const result = replaceRichText(text, richTextDeps);
+      if (result.ok) capturedRange = null;
+      return { ok: result.ok, diagnostics: result.diagnostics };
+    }
+
     if (activeField instanceof HTMLTextAreaElement || activeField instanceof HTMLInputElement) {
       activeField.focus();
       const start = capturedStart ?? activeField.selectionStart ?? activeField.value.length;
@@ -787,12 +798,12 @@ function createHost(): HostController {
     return { ok: false };
   }
 
-  /** Report the Slack write verdict (lengths/tags only, never text). */
+  /** Report a verified write (lengths/tags only, never text). */
   function postInsertResult(ok: boolean, diagnostics: SlackWriteDiagnostics): void {
     try {
       // Page console persists after the panel closes. The diagnostic trail
       // for silent-close reports.
-      console.info("[jot] slack insert", {
+      console.info("[jot] verified insert", {
         ok,
         strategy: diagnostics.strategy,
         tag: diagnostics.tag,
@@ -884,6 +895,18 @@ function createHost(): HostController {
             // Verified write; on failure the panel stays open so the user
             // can copy the rewrite instead of silently losing it.
             // Slack composers take plain text (pills rebuilt from labels).
+            const outcome = insertText(msg.text);
+            if (outcome.diagnostics) {
+              postInsertResult(outcome.ok, outcome.diagnostics);
+            }
+            if (outcome.ok) closePanel();
+            else postInsertFailed(msg.text, outcome.diagnostics);
+            break;
+          }
+          const richTextDeps = liveRichTextDeps(document, window, activeField);
+          if (resolveFrameworkRoot(richTextDeps)) {
+            // Same verified-write contract as Slack: framework editors get
+            // plain text and the panel stays open on failure.
             const outcome = insertText(msg.text);
             if (outcome.diagnostics) {
               postInsertResult(outcome.ok, outcome.diagnostics);

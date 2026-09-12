@@ -232,8 +232,9 @@ export function outermostEditable(start: EditableElement): EditableElement {
 
 /** Verified read-back, or null. Accepts an exact match or the expected text
  *  contained in the composer (editors may wrap replacements in formatting).
- *  Newline-aware: multiline rewrites verify with line breaks intact. */
-function verifiedRead(composer: EditableElement, text: string): { ok: boolean; readBack: string } {
+ *  Newline-aware: multiline rewrites verify with line breaks intact. Shared
+ *  with the framework-agnostic path in `./richText`. */
+export function verifiedRead(composer: EditableElement, text: string): { ok: boolean; readBack: string } {
   const readBack = readComposerText(composer);
   const expected = normalizeComposerMultiline(text);
   if (!expected) return { ok: false, readBack };
@@ -241,7 +242,8 @@ function verifiedRead(composer: EditableElement, text: string): { ok: boolean; r
   return { ok: actual === expected || actual.includes(expected), readBack };
 }
 
-function tryExecInsert(composer: EditableElement, deps: SlackDeps, text: string): boolean {
+/** Select-all + execCommand insertText + input event. Shared with `./richText`. */
+export function tryExecInsert(composer: EditableElement, deps: SlackDeps, text: string): boolean {
   const sel = deps.getSelection();
   if (!sel) return false;
   try {
@@ -263,7 +265,8 @@ function tryExecInsert(composer: EditableElement, deps: SlackDeps, text: string)
   return inserted;
 }
 
-function tryBeforeInput(composer: EditableElement, deps: SlackDeps, text: string): boolean {
+/** Dispatch a trusted-style beforeinput for editors that only honor that path. Shared with `./richText`. */
+export function tryBeforeInput(composer: EditableElement, deps: SlackDeps, text: string): boolean {
   if (!deps.createBeforeInputEvent) return false;
   try {
     composer.dispatchEvent(deps.createBeforeInputEvent(text));
