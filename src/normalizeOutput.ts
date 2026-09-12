@@ -2,7 +2,7 @@
  * Post-processing normalization for AI-generated rewrite output.
  *
  * Shared by the Wurkflo web backend (`app/core/routes/api.ai.rewrite.ts`)
- * and the Jot extension (`apps/extension/src/lib/api.ts`). Single source of
+ * and the Jot extension (`apps/jot/src/lib/api.ts`). Single source of
  * truth — do not duplicate this logic back into either app.
  *
  * The rewrite prompts prohibit typographic characters; models occasionally
