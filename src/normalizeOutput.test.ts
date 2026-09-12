@@ -37,17 +37,14 @@ describe("normalizeRewriteOutput", () => {
   });
 
   it("preserves URLs, @mentions, hashtags, and technical syntax", () => {
-    const tech =
-      "Visit https://example.com/a_b?x=1#frag, ping @user_name about #Topic, code: obj?.prop ?? 0";
+    const tech = "Visit https://example.com/a_b?x=1#frag, ping @user_name about #Topic, code: obj?.prop ?? 0";
     expect(normalizeRewriteOutput(tech)).toBe(tech);
   });
 
   it("leaves already-normalized text unchanged (no double replacement)", () => {
     expect(normalizeRewriteOutput("test - hyphen")).toBe("test - hyphen");
     expect(normalizeRewriteOutput('test "quoted"')).toBe('test "quoted"');
-    expect(normalizeRewriteOutput("test ... ellipsis")).toBe(
-      "test ... ellipsis"
-    );
+    expect(normalizeRewriteOutput("test ... ellipsis")).toBe("test ... ellipsis");
   });
 
   it("is idempotent", () => {
@@ -58,8 +55,6 @@ describe("normalizeRewriteOutput", () => {
   it("preserves paragraph breaks, list markers, and HTML tags for rewrite output", () => {
     expect(normalizeRewriteOutput("one\n\ntwo")).toBe("one\n\ntwo");
     expect(normalizeRewriteOutput("- one\n- two")).toBe("- one\n- two");
-    expect(normalizeRewriteOutput("<p>hi <b>there</b></p>")).toBe(
-      "<p>hi <b>there</b></p>"
-    );
+    expect(normalizeRewriteOutput("<p>hi <b>there</b></p>")).toBe("<p>hi <b>there</b></p>");
   });
 });
