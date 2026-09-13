@@ -463,7 +463,8 @@ async function runHtmlInsert(
   if (clipped.completed && plainExpected) {
     await deps.waitForFlush();
     const actual = normalizeComposerMultiline(readComposerText(root));
-    if (actual.includes(plainExpected)) return { ...clipped, mechanism: "clipboard" as const, clipboardTried: true };
+    if (verifyContained(actual, plainExpected))
+      return { ...clipped, mechanism: "clipboard" as const, clipboardTried: true };
     traceDegrade({
       attempt,
       from: "html-clipboard-paste",
@@ -479,7 +480,7 @@ async function runHtmlInsert(
   if (pasted.completed && plainExpected) {
     await deps.waitForFlush();
     const actual = normalizeComposerMultiline(readComposerText(root));
-    if (actual.includes(plainExpected)) return { ...pasted, mechanism: "paste" as const, pasteTried: true };
+    if (verifyContained(actual, plainExpected)) return { ...pasted, mechanism: "paste" as const, pasteTried: true };
     traceDegrade({
       attempt,
       from: "html-paste",
@@ -526,16 +527,30 @@ function verifySlack(expectedLen: number): number {
   return Math.min(64, Math.floor(expectedLen / 10));
 }
 
+/**
+ * Either-direction containment shared by every verify site. Editors shed
+ * boundary whitespace/blocks that normalization cannot see (a perfect
+ * 286-char write reading back as 283), so a one-sided `includes` fails
+ * correct writes by construction whenever actual lands shorter. Accept
+ * containment in either direction within the proportional slack; appends
+ * and duplicates still fail (longer-actual containment is unchanged, and
+ * the duplication/growth breakers run first). Only prefix/suffix loss
+ * within slack can pass — bounded, contiguous, and exactly the benign
+ * boundary-strip shape.
+ */
+function verifyContained(actual: string, expected: string): boolean {
+  if (!expected || !actual) return false;
+  if (actual === expected) return true;
+  if (Math.abs(actual.length - expected.length) > verifySlack(expected.length)) return false;
+  return actual.includes(expected) || expected.includes(actual);
+}
+
 function verifyTolerant(root: EditableElement, text: string): { ok: boolean; readBack: string } {
   const readBack = readComposerText(root);
   const expected = normalizeComposerMultiline(text);
   if (!expected) return { ok: false, readBack };
   const actual = normalizeComposerMultiline(readBack);
-  if (actual === expected) return { ok: true, readBack };
-  if (actual.includes(expected) && Math.abs(actual.length - expected.length) <= verifySlack(expected.length)) {
-    return { ok: true, readBack };
-  }
-  return { ok: false, readBack };
+  return { ok: verifyContained(actual, expected), readBack };
 }
 
 /**
@@ -642,7 +657,9 @@ export async function replaceRichText(
     // previous attempt left the composer diverged. A restore that cannot
     // verify aborts the run instead of stacking another attempt on top.
     if (attempt > 0 && snapshot !== null) {
-      const diverged = normalizeComposerMultiline(readComposerText(root)) !== normalizeComposerMultiline(snapshot);
+      const current = normalizeComposerMultiline(readComposerText(root));
+      const snapNorm = normalizeComposerMultiline(snapshot);
+      const diverged = !verifyContained(current, snapNorm);
       if (diverged) {
         traceDegrade({
           attempt: diag.attempts,
@@ -654,7 +671,7 @@ export async function replaceRichText(
         await tryRestoreOriginal(deps, snapshot);
         const afterResolve = resolveFrameworkRoot(deps);
         const after = afterResolve ? readComposerText(afterResolve.root) : "";
-        if (normalizeComposerMultiline(after) !== normalizeComposerMultiline(snapshot)) {
+        if (!verifyContained(normalizeComposerMultiline(after), normalizeComposerMultiline(snapshot))) {
           // Restore failed: fail closed now instead of stacking another
           // attempt (and another restore) on corrupted state.
           traceDegrade({
@@ -694,7 +711,7 @@ export async function replaceRichText(
         const readBack = readComposerText(root);
         const actual = normalizeComposerMultiline(readBack);
         lastReadBack = readBack;
-        const htmlOk = actual.includes(plainExpected);
+        const htmlOk = verifyContained(actual, plainExpected);
         traceWrite({
           attempt: diag.attempts,
           op:

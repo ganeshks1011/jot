@@ -187,6 +187,47 @@ describe("replaceRichText", () => {
     expect(result.diagnostics.attempts).toBe(3);
   });
 
+  it("verifies a perfect write the editor trims shorter (boundary strip)", async () => {
+    // Regression: a 60-char rewrite reading back 3 chars short (editor
+    // sheds trailing block whitespace) must verify — one-sided includes
+    // can never match a shorter actual and failed every such write.
+    const rewrite = "The quick brown fox jumps over the lazy dog near the riverbank at dawn. ";
+    expect(rewrite).toHaveLength(72);
+    const backing = { v: "old" };
+    const root = element({ tagName: "DIV" });
+    Object.defineProperty(root, "innerText", {
+      get: () => (backing.v.length > 3 ? backing.v.slice(0, -3) : backing.v),
+      set: (v: string) => {
+        backing.v = v;
+      },
+      configurable: true,
+    });
+    const marker = FRAMEWORK_MARKERS.find((m) => m.id === "lexical");
+    if (!marker) throw new Error("missing lexical marker");
+    const closest = (selector: string) => (selector === marker.selector ? root : null);
+    const execCommand = vi.fn((command: string, _showUI: boolean, value: string) => {
+      if (command === "delete") {
+        backing.v = "";
+        return true;
+      }
+      if (command === "insertText") {
+        backing.v = value;
+        return true;
+      }
+      return false;
+    });
+    const d = deps({
+      field: root,
+      focused: root,
+      closestFromField: closest,
+      closestFromFocused: closest,
+      execCommand,
+    });
+    const result = await replaceRichText(rewrite, d);
+    expect(result.ok).toBe(true);
+    expect(backing.v).toBe(rewrite);
+  });
+
   it("falls back to line-by-line insert when whole-text exec fails", async () => {
     const { root, closest } = markedRoot("prosemirror", { innerText: "old" });
     const lines: string[] = [];
