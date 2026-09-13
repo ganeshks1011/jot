@@ -38,6 +38,7 @@ import {
   isEditableTarget,
   liveSlackDeps,
   normalizeComposerMultiline,
+  normalizeComposerText,
   readComposerText,
   type SlackDeps,
   type SlackReplaceResult,
@@ -124,6 +125,11 @@ function focusLanded(root: EditableElement, deps: RichTextDeps): boolean {
  * editor text before any `execCommand` runs. A collapsed or partial
  * selection would append instead of replace, so the op is skipped.
  * Unprovidable selection text (or an empty editor) proceeds.
+ *
+ * Comparison is structure-insensitive (all whitespace collapsed): selection
+ * text and `innerText` disagree on break placement around list and block
+ * markup, which must not block writes on rich content. Word content still
+ * has to match in full — a partial selection never verifies.
  */
 function selectAllVerified(root: EditableElement, deps: RichTextDeps): boolean {
   const sel = deps.getSelection();
@@ -135,9 +141,9 @@ function selectAllVerified(root: EditableElement, deps: RichTextDeps): boolean {
   }
   const covered = sel.selectionText?.();
   if (covered == null) return true;
-  const editorText = normalizeComposerMultiline(readComposerText(root));
+  const editorText = normalizeComposerText(readComposerText(root));
   if (!editorText) return true;
-  return normalizeComposerMultiline(covered) === editorText;
+  return normalizeComposerText(covered) === editorText;
 }
 
 /**

@@ -282,6 +282,45 @@ describe("replaceRichText", () => {
     expect(result.diagnostics.attempts).toBe(1);
   });
 
+  it("verifies coverage across list markup with different break placement", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "Item one\nItem two\nItem three" });
+    const execCommand = vi.fn((_command: string, _showUI: boolean, value: string) => {
+      root.innerText = value;
+      return true;
+    });
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand,
+      getSelection: () => ({
+        selectAllChildren: () => {},
+        // Selection text joins blocks with spaces where innerText uses newlines.
+        selectionText: () => "Item one Item two Item three",
+      }),
+    });
+    const result = await replaceRichText("Item 1\nItem 2", d);
+    expect(result.ok).toBe(true);
+    expect(root.innerText).toBe("Item 1\nItem 2");
+  });
+
+  it("still rejects partial selections on rich content", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "Item one\nItem two" });
+    const execCommand = vi.fn(() => true);
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand,
+      getSelection: () => ({
+        selectAllChildren: () => {},
+        selectionText: () => "Item one",
+      }),
+    });
+    const result = await replaceRichText("Replacement text here", d);
+    expect(result.ok).toBe(false);
+    expect(execCommand).not.toHaveBeenCalled();
+    expect(root.innerText).toBe("Item one\nItem two");
+  });
+
   it("skips the op when the mapped selection never covers the editor", async () => {
     const { root, closest } = markedRoot("lexical", { innerText: "full text here" });
     const execCommand = vi.fn(() => true);
