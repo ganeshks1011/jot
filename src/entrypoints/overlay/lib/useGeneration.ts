@@ -1,7 +1,7 @@
+import type { ContentStatus } from "@wurkflo/jot-ui";
 import { useCallback, useRef, useState } from "react";
 import { type EditorType, resolveProviderMeta, siteLabelFor, track } from "@/lib/analytics";
 import { ProviderError, rewriteText } from "@/lib/api";
-import type { ContentStatus } from "../components/ContentBox";
 import { buildCacheKey, isCacheHit } from "./generation";
 
 export function useGeneration(

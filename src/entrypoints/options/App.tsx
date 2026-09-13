@@ -3,20 +3,8 @@ import { Input } from "@heroui/react/input";
 import { Switch } from "@heroui/react/switch";
 import { Tabs } from "@heroui/react/tabs";
 import { TextArea } from "@heroui/react/textarea";
-import {
-  Check,
-  ExternalLink,
-  Eye,
-  EyeOff,
-  Loader2,
-  LogIn,
-  LogOut,
-  Monitor,
-  Moon,
-  Plus,
-  RefreshCw,
-  Sun,
-} from "lucide-react";
+import { ThemePicker } from "@wurkflo/jot-ui";
+import { Check, ExternalLink, Eye, EyeOff, Loader2, LogIn, LogOut, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import TeachJotSection from "@/components/TeachJotSection";
@@ -388,33 +376,7 @@ export default function App() {
               <p className="text-xs text-muted">Model provider, API key, and writing modes.</p>
             </div>
           </div>
-          <div
-            role="radiogroup"
-            aria-label="Theme"
-            className="inline-flex items-center rounded-full border border-border bg-surface-secondary/60 p-0.5"
-          >
-            {(
-              [
-                ["light", Sun, "Light"],
-                ["system", Monitor, "System"],
-                ["dark", Moon, "Dark"],
-              ] as const
-            ).map(([id, Icon, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="radio"
-                aria-checked={theme === id}
-                aria-label={label}
-                onClick={() => handleThemeChange(id as ThemeId)}
-                className={`inline-flex items-center justify-center rounded-full p-1.5 transition ${
-                  theme === id ? "bg-accent text-accent-foreground shadow-sm" : "text-muted hover:text-foreground"
-                }`}
-              >
-                <Icon className="size-3.5" />
-              </button>
-            ))}
-          </div>
+          <ThemePicker value={theme} onChange={handleThemeChange} />
         </header>
 
         <section className="rounded-2xl border border-border bg-surface p-5 shadow-surface">
@@ -643,7 +605,9 @@ export default function App() {
                                 type={showKey ? "text" : "password"}
                                 value={apiKey}
                                 onChange={(e) => setApiKey(e.target.value)}
-                                placeholder={isLocalProvider(provider, baseUrl) ? "Not needed for local models" : "sk-..."}
+                                placeholder={
+                                  isLocalProvider(provider, baseUrl) ? "Not needed for local models" : "sk-..."
+                                }
                                 fullWidth
                                 variant="secondary"
                                 className="pr-11"

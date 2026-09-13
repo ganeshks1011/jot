@@ -3,6 +3,7 @@ import { Card } from "@heroui/react/card";
 import { Chip } from "@heroui/react/chip";
 import { Kbd } from "@heroui/react/kbd";
 import { Tooltip } from "@heroui/react/tooltip";
+import { ContentBox, type ContentStatus, FeedbackInput } from "@wurkflo/jot-ui";
 import type { LexicalTextNode } from "@wurkflo/shared";
 import { Check, Settings as SettingsIcon, X } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
@@ -13,8 +14,6 @@ import { WURKFLO_ORIGIN } from "@/lib/config";
 import { isSlackComposer } from "@/lib/editors/slack";
 import { MIN_CONTENT_HEIGHT } from "@/lib/overlayGeometry";
 import { htmlToPlainText, sanitizeRichHtml } from "@/lib/richText";
-import { ContentBox, type ContentStatus } from "./components/ContentBox";
-import { FeedbackInput } from "./components/FeedbackInput";
 import {
   isEmbedded,
   type OverlayPlacement,
@@ -26,9 +25,9 @@ import {
   postResize,
   postToParent,
 } from "./lib/bridge";
-import { copyDomHtml, copyHtml, type ContentNodeLike } from "./lib/clipboard";
-import { buildKeyedHtml } from "./lib/keyedHtml";
+import { type ContentNodeLike, copyDomHtml, copyHtml } from "./lib/clipboard";
 import { type FocusZone, selectHelperText, zoneForTarget } from "./lib/helperText";
+import { buildKeyedHtml } from "./lib/keyedHtml";
 import { startReadyRetry } from "./lib/readyRetry";
 import { useGeneration } from "./lib/useGeneration";
 
@@ -835,7 +834,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <ContentBox output={output} status={status} htmlPreview={keyedHtml} />
+          <ContentBox output={output} status={status} htmlPreview={keyedHtml} sanitize={sanitizeRichHtml} />
         )}
         {(() => {
           const kind = selectHelperText({
