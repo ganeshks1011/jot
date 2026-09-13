@@ -1,6 +1,6 @@
 import { browser } from "wxt/browser";
 import type { PersonalizationSnapshot } from "./personalization/types";
-import { getAdapter, hydrateCustomProviders } from "./providers";
+import { getAdapter, hydrateCustomProviders, isBuiltin } from "./providers";
 import type {
   BackendConfig,
   ContextExample,
@@ -172,6 +172,19 @@ export async function upsertCustomProvider(meta: CustomProviderMeta): Promise<vo
   if (idx >= 0) next[idx] = sanitized;
   else next.push(sanitized);
   await saveCustomProviders(next);
+}
+
+/**
+ * Delete a custom provider and its stored API key. Built-in ids and
+ * unknown ids throw so callers surface the failure instead of silently
+ * falling back.
+ */
+export async function removeCustomProvider(id: string): Promise<void> {
+  if (!id || isBuiltin(id)) throw new Error(`Cannot remove provider "${id}"`);
+  const existing = await getCustomProviders();
+  if (!existing.some((m) => m.id === id)) throw new Error(`Unknown provider "${id}"`);
+  await saveCustomProviders(existing.filter((m) => m.id !== id));
+  await saveApiKey("", id);
 }
 
 export async function getTheme(): Promise<ThemeId> {

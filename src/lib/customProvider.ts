@@ -9,7 +9,18 @@ export interface CustomProviderForm {
   headersText?: string;
 }
 
-export function validateCustomProvider(form: CustomProviderForm): { error?: string; meta?: CustomProviderMeta } {
+/** Render stored extra headers back into the `Header: value` textarea form. */
+export function headersToText(extraHeaders?: Record<string, string>): string {
+  if (!extraHeaders) return "";
+  return Object.entries(extraHeaders)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n");
+}
+
+export function validateCustomProvider(
+  form: CustomProviderForm,
+  existingId?: string,
+): { error?: string; meta?: CustomProviderMeta } {
   const label = form.label.trim();
   const url = form.baseUrl.trim();
   const mdl = form.model.trim();
@@ -36,8 +47,8 @@ export function validateCustomProvider(form: CustomProviderForm): { error?: stri
       return { error: "API key page must be an https URL" };
     }
   }
-  const baseSlug = slugify(label);
-  const id = getNextSlug(baseSlug);
+  // Edits keep their id so upsert updates in place; creates mint a fresh slug.
+  const id = existingId?.trim() || getNextSlug(slugify(label));
   let extraHeaders: Record<string, string> | undefined;
   if (form.headersText?.trim()) {
     extraHeaders = {};

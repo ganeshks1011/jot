@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateCustomProvider } from "./customProvider";
+import { headersToText, validateCustomProvider } from "./customProvider";
 
 describe("validateCustomProvider", () => {
   it("requires label, baseUrl, model", () => {
@@ -26,6 +26,24 @@ describe("validateCustomProvider", () => {
     const r = validateCustomProvider({ label: "My Provider", baseUrl: "https://a", model: "m" });
     expect(r.meta?.label).toBe("My Provider");
     expect(r.meta?.id).toBeTruthy();
+  });
+
+  it("preserves the existing id when editing", () => {
+    const r = validateCustomProvider(
+      { label: "Renamed", baseUrl: "https://a", model: "m", headersText: "X: 1" },
+      "my-provider",
+    );
+    expect(r.meta?.id).toBe("my-provider");
+    expect(r.meta?.label).toBe("Renamed");
+    expect(r.meta?.extraHeaders).toEqual({ X: "1" });
+  });
+
+  it("round-trips headers through headersToText", () => {
+    expect(headersToText(undefined)).toBe("");
+    expect(headersToText({})).toBe("");
+    const text = headersToText({ X: "1", Y: "2" });
+    const r = validateCustomProvider({ label: "a", baseUrl: "https://a", model: "m", headersText: text });
+    expect(r.meta?.extraHeaders).toEqual({ X: "1", Y: "2" });
   });
 
   it("accepts https and loopback key pages, rejects other schemes", () => {

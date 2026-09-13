@@ -24,15 +24,14 @@ import { useWurkfloLink } from "@/hooks/useWurkfloLink";
 import { track } from "@/lib/analytics";
 import { listModels } from "@/lib/api";
 import { completeWurkfloLink, extensionAuthUrl, signOutWurkflo, watchWurkfloAuth } from "@/lib/auth";
-import { validateCustomProvider } from "@/lib/customProvider";
+import { headersToText, validateCustomProvider } from "@/lib/customProvider";
 import {
   getAdapter,
   getAllAdapters,
-  getNextSlug,
   getRecommendedModels,
+  isBuiltin,
   OPENAI_ENDPOINT_PRESETS,
   ProviderError,
-  slugify,
 } from "@/lib/providers";
 import { isRetiredModel } from "@/lib/providers/openai";
 import { validateApiKey } from "@/lib/providerValidation";
@@ -48,6 +47,7 @@ import {
   getTheme,
   getWurkfloRemaining,
   getWurkfloUser,
+  removeCustomProvider,
   saveAnalyticsEnabled,
   saveApiKey,
   saveBackendConfig,
@@ -59,7 +59,7 @@ import {
   watchTheme,
   watchWurkfloUser,
 } from "@/lib/storage";
-import type { ProviderId, ThemeId } from "@/lib/types";
+import type { CustomProviderMeta, ProviderId, ThemeId } from "@/lib/types";
 
 export default function App() {
   // Extension page view (options). Fires once on mount.
@@ -93,9 +93,12 @@ export default function App() {
   const [customModel, setCustomModel] = useState("");
   const [customApiKeyUrl, setCustomApiKeyUrl] = useState("");
   const [customHeadersText, setCustomHeadersText] = useState("");
+  const [customMetas, setCustomMetas] = useState<CustomProviderMeta[]>([]);
+  const [editingCustomId, setEditingCustomId] = useState<string | null>(null);
 
   const refreshProviders = useCallback(async () => {
-    await getCustomProviders();
+    const metas = await getCustomProviders();
+    setCustomMetas(metas);
     setProviderOptions(getAllAdapters());
   }, []);
 
@@ -180,6 +183,9 @@ export default function App() {
       setBaseUrl(cfg.baseUrl);
       setModel(cfg.model);
       setApiKey(key);
+      const metas = await getCustomProviders();
+      if (cancelled) return;
+      setCustomMetas(metas);
       setProviderOptions(getAllAdapters());
       setLoaded(true);
     })();
@@ -251,14 +257,27 @@ export default function App() {
     void getApiKey(id).then((k) => setApiKey(k));
   }, []);
 
-  const handleAddCustomProvider = useCallback(async () => {
-    const validated = validateCustomProvider({
-      label: customLabel,
-      baseUrl: customBaseUrl,
-      model: customModel,
-      apiKeyUrl: customApiKeyUrl,
-      headersText: customHeadersText,
-    });
+  const resetCustomForm = useCallback(() => {
+    setShowCustomForm(false);
+    setEditingCustomId(null);
+    setCustomLabel("");
+    setCustomBaseUrl("");
+    setCustomModel("");
+    setCustomApiKeyUrl("");
+    setCustomHeadersText("");
+  }, []);
+
+  const handleSaveCustomProvider = useCallback(async () => {
+    const validated = validateCustomProvider(
+      {
+        label: customLabel,
+        baseUrl: customBaseUrl,
+        model: customModel,
+        apiKeyUrl: customApiKeyUrl,
+        headersText: customHeadersText,
+      },
+      editingCustomId ?? undefined,
+    );
     if (validated.error) {
       setHint(validated.error);
       return;
@@ -275,17 +294,62 @@ export default function App() {
         setApiKey("");
         setModels([]);
       }
-      setShowCustomForm(false);
-      setCustomLabel("");
-      setCustomBaseUrl("");
-      setCustomModel("");
-      setCustomApiKeyUrl("");
-      setCustomHeadersText("");
+      resetCustomForm();
       setHint(null);
     } catch (err) {
-      setHint(err instanceof Error ? err.message : "Could not add provider");
+      setHint(err instanceof Error ? err.message : "Could not save provider");
     }
-  }, [customLabel, customBaseUrl, customModel, customApiKeyUrl, customHeadersText, refreshProviders]);
+  }, [
+    customLabel,
+    customBaseUrl,
+    customModel,
+    customApiKeyUrl,
+    customHeadersText,
+    editingCustomId,
+    refreshProviders,
+    resetCustomForm,
+  ]);
+
+  const handleEditCustomProvider = useCallback(
+    (id: string) => {
+      const meta = customMetas.find((m) => m.id === id);
+      if (!meta) return;
+      setEditingCustomId(id);
+      setCustomLabel(meta.label);
+      setCustomBaseUrl(meta.baseUrl);
+      setCustomModel(meta.defaultModel);
+      setCustomApiKeyUrl(meta.apiKeyUrl ?? "");
+      setCustomHeadersText(headersToText(meta.extraHeaders));
+      setShowCustomForm(true);
+      setHint(null);
+    },
+    [customMetas],
+  );
+
+  const handleRemoveCustomProvider = useCallback(
+    async (id: string) => {
+      const meta = customMetas.find((m) => m.id === id);
+      if (!meta) return;
+      if (!window.confirm(`Remove "${meta.label}"? Its stored API key will be deleted.`)) return;
+      try {
+        await removeCustomProvider(id);
+        await refreshProviders();
+        if (provider === id) {
+          const fallback = getAdapter("jot-api")!;
+          setProvider(fallback.id as ProviderId);
+          setBaseUrl(fallback.defaultBaseUrl);
+          setModel(fallback.defaultModel);
+          setApiKey("");
+          setModels([]);
+        }
+        if (editingCustomId === id) resetCustomForm();
+        setHint(null);
+      } catch (err) {
+        setHint(err instanceof Error ? err.message : "Could not remove provider");
+      }
+    },
+    [customMetas, editingCustomId, provider, refreshProviders, resetCustomForm],
+  );
 
   const save = useCallback(async () => {
     if (isRetiredModel(model)) {
@@ -400,6 +464,26 @@ export default function App() {
                           {selected && <span className="size-1.5 rounded-full bg-accent-foreground" />}
                         </span>
                       </button>
+                      {!isBuiltin(a.id) && (
+                        <div className="flex gap-2 pl-1">
+                          <Button
+                            size="sm"
+                            variant="tertiary"
+                            onPress={() => handleEditCustomProvider(a.id)}
+                            aria-label={`Edit ${a.label}`}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onPress={() => void handleRemoveCustomProvider(a.id)}
+                            aria-label={`Remove ${a.label}`}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      )}
                       {selected && a.id === "jot-api" && (
                         <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-secondary/50 p-4">
                           {wurkfloUser ? (
@@ -601,7 +685,9 @@ export default function App() {
                   </Button>
                 ) : (
                   <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-secondary/30 p-3">
-                    <p className="text-sm font-medium">Add custom provider</p>
+                    <p className="text-sm font-medium">
+                      {editingCustomId ? "Edit custom provider" : "Add custom provider"}
+                    </p>
                     <p className="text-xs text-muted">
                       Any OpenAI-compatible endpoint. Share via code with{" "}
                       <code className="rounded bg-surface px-1 py-0.5 text-[11px]">createOpenAIProvider</code> +{" "}
@@ -652,10 +738,10 @@ export default function App() {
                       <p className="mt-1 text-[11px] text-muted">One per line, `Header: value`.</p>
                     </div>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="primary" onPress={() => void handleAddCustomProvider()}>
-                        Add provider
+                      <Button size="sm" variant="primary" onPress={() => void handleSaveCustomProvider()}>
+                        {editingCustomId ? "Save changes" : "Add provider"}
                       </Button>
-                      <Button size="sm" variant="ghost" onPress={() => setShowCustomForm(false)}>
+                      <Button size="sm" variant="ghost" onPress={() => resetCustomForm()}>
                         Cancel
                       </Button>
                     </div>
