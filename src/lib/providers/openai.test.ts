@@ -82,8 +82,8 @@ describe("thinking-disabled payloads", () => {
   });
 
   it("sends no thinking flags for other providers", async () => {
-    await provider("anthropic").rewrite(
-      { provider: "anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude" },
+    await provider("custom").rewrite(
+      { provider: "custom", baseUrl: "https://example.com/v1", model: "m" },
       "key",
       SYSTEM,
       USER,

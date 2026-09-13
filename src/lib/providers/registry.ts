@@ -1,4 +1,5 @@
 import type { CustomProviderMeta } from "../types";
+import { AnthropicProvider } from "./anthropic";
 import { JotApiProvider, OpenAICompatibleProvider } from "./openai";
 import type { ProviderAdapter } from "./types";
 
@@ -20,15 +21,8 @@ export const OPENAI_ADAPTER = new OpenAICompatibleProvider(
   "https://platform.openai.com/api-keys",
 );
 
-/** Anthropic via its OpenAI-compatible endpoint (Bearer `sk-ant-...`). */
-export const ANTHROPIC_ADAPTER = new OpenAICompatibleProvider(
-  "anthropic",
-  "Claude",
-  "https://api.anthropic.com/v1",
-  "claude-sonnet-4-5",
-  false,
-  "https://console.anthropic.com/settings/keys",
-);
+/** Claude via Anthropic's native Messages API (`x-api-key` + versioned headers). */
+export const ANTHROPIC_ADAPTER = new AnthropicProvider();
 
 /** Google via its OpenAI-compatible endpoint (Bearer `AIza...`).
  *  Model IDs are bare (`gemini-...`): the OpenAI-compatible endpoint 400s

@@ -66,8 +66,9 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     const headers = this.buildHeaders(apiKey);
 
     // Thinking is provider-specific: disable it for OpenAI and Gemini
-    // only. Other OpenAI-compatible endpoints (Anthropic, Ollama, customs)
-    // and the Jot API must not receive these flags.
+    // only. Other OpenAI-compatible endpoints (Ollama, customs) and the
+    // Jot API must not receive these flags. Anthropic uses its own native
+    // adapter and never reaches this path.
     const isGemini =
       config.provider === "gemini" || config.baseUrl.toLowerCase().includes("generativelanguage.googleapis.com");
     const isOpenAI = config.provider === "openai" || config.baseUrl.toLowerCase().includes("api.openai.com");

@@ -1,3 +1,4 @@
+export { AnthropicProvider } from "./anthropic";
 export {
   createOpenAIProvider,
   JotApiProvider,
