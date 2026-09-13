@@ -494,6 +494,44 @@ describe("replaceRichText", () => {
     expect(wholeRoots).toEqual([false, false, true]);
     expect(result.readBack).toBe("old");
   });
+
+  it("inserts sanitized HTML when the editor honors insertHTML", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const html = "<ul><li>one</li><li>two</li></ul>";
+    const commands: string[] = [];
+    const execCommand = vi.fn((command: string, _showUI: boolean, _value: string) => {
+      commands.push(command);
+      if (command === "insertHTML") {
+        root.innerText = "- one\n- two";
+        return true;
+      }
+      return false;
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText("one\ntwo", d, html);
+    expect(result.ok).toBe(true);
+    expect(commands).toEqual(["insertHTML"]);
+  });
+
+  it("falls back to plain text when insertHTML is refused", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const html = "<ul><li>one</li><li>two</li></ul>";
+    const commands: string[] = [];
+    const execCommand = vi.fn((command: string, _showUI: boolean, value: string) => {
+      commands.push(command);
+      if (command === "insertHTML") return false;
+      if (command === "insertText") {
+        root.innerText = value;
+        return true;
+      }
+      return false;
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText("Replacement text here", d, html);
+    expect(result.ok).toBe(true);
+    expect(commands[0]).toBe("insertHTML");
+    expect(commands).toContain("insertText");
+  });
 });
 
 describe("liveRichTextDeps", () => {

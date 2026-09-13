@@ -31,6 +31,10 @@
  *   the run instead of stacking another attempt on corrupted state.
  * - Two circuit-breakers (verbatim duplication, absolute growth) and a
  *   best-effort snapshot restore bound every failure mode.
+ * - With sanitized HTML, a rich `insertHTML` attempt runs before plain
+ *   text: framework clipboard matchers build real nodes (lists, bold)
+ *   from a paste-like input. Verified by item-text containment with the
+ *   same breakers; any failure falls through to the plain path.
  */
 
 import {
@@ -44,6 +48,7 @@ import {
   type SlackReplaceResult,
   type SlackWriteDiagnostics,
 } from "./slack";
+import { htmlToPlainText } from "../richText";
 
 /** Framework markers: editor-root selectors. Data only — adding an editor
  *  is adding one line here, never a new branch. Exported so tests pin each
@@ -283,6 +288,34 @@ async function runWholeInsert(
 }
 
 /**
+ * Rich HTML insert: select, sync, re-check, then `insertHTML`. Chrome turns
+ * the command into a paste-like input the framework's clipboard matchers
+ * build real nodes from (lists, bold), unlike plain `insertText`. Caller
+ * verifies by item-text containment and falls back to the plain path.
+ */
+async function runHtmlInsert(
+  root: EditableElement,
+  deps: RichTextDeps,
+  html: string,
+): Promise<WriteOpOutcome> {
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-pre" };
+  await syncSelection(deps);
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
+  let execReturn = false;
+  try {
+    execReturn = deps.execCommand("insertHTML", false, html);
+  } catch {
+    // Verification decides; execCommand lies in both directions.
+  }
+  try {
+    root.dispatchEvent(deps.createInputEvent());
+  } catch {
+    // Verification decides; a dispatch failure alone is not fatal.
+  }
+  return { completed: true, execReturn };
+}
+
+/**
  * Verify for the plain-text framework path. Exact equality wins; otherwise
  * accept containment within a length bound proportional to the rewrite
  * (editor-added block structure scales with content; a fixed slack would
@@ -340,13 +373,19 @@ async function tryRestoreOriginal(deps: RichTextDeps, snapshot: string): Promise
 
 /**
  * Replace the framework composer contents via real editing input and verify.
- * Exactly one write op per strategy (whole-text, then line-by-line) with a
- * frame flush before every read-back; focus, selection coverage, and two
+ * With sanitized HTML, a rich `insertHTML` attempt runs first (framework
+ * clipboard matchers build real list and inline nodes from it); then the
+ * plain-text path exactly as before. Exactly one write op per strategy with
+ * a frame flush before every read-back; focus, selection coverage, and two
  * circuit-breakers (verbatim duplication, absolute growth) guard every step.
  * Reports failure instead of guessing — the caller keeps the panel open so
  * the rewrite stays copyable.
  */
-export async function replaceRichText(text: string, deps: RichTextDeps): Promise<SlackReplaceResult> {
+export async function replaceRichText(
+  text: string,
+  deps: RichTextDeps,
+  html?: string | null,
+): Promise<SlackReplaceResult> {
   const expected = normalizeComposerMultiline(text);
   const expectedLen = expected.length;
   const diag: SlackWriteDiagnostics = {
@@ -418,6 +457,47 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
       }
     }
     const preOpLen = normalizeComposerMultiline(readComposerText(root)).length;
+    // Rich attempt first when sanitized HTML is present: the framework's
+    // clipboard matchers build real nodes (lists, bold) from a paste-like
+    // input, where plain insertText can only ever produce text. Verified by
+    // item-text containment; any failure falls through to plain text below.
+    const cleanHtml = html?.trim() ? html : null;
+    const plainExpected = cleanHtml ? normalizeComposerMultiline(htmlToPlainText(cleanHtml)) : "";
+    if (cleanHtml && plainExpected) {
+      const rich = await runHtmlInsert(root, deps, cleanHtml);
+      if (!rich.completed) {
+        traceWrite({
+          attempt: diag.attempts,
+          op: "html-skipped",
+          execReturn: false,
+          preOpLen,
+          postOpLen: preOpLen,
+          verifyOk: false,
+          sameRoot,
+          detail: rich.skipped,
+        });
+      }
+      if (rich.completed) {
+        await deps.waitForFlush();
+        const readBack = readComposerText(root);
+        const actual = normalizeComposerMultiline(readBack);
+        lastReadBack = readBack;
+        const htmlOk = actual.includes(plainExpected);
+        traceWrite({
+          attempt: diag.attempts,
+          op: "html",
+          execReturn: rich.execReturn,
+          preOpLen,
+          postOpLen: actual.length,
+          verifyOk: htmlOk,
+          sameRoot,
+        });
+        if (isDuplicated(actual, plainExpected) || isOvergrown(actual.length, diag.preLen, plainExpected.length)) {
+          break;
+        }
+        if (htmlOk) return succeed(readBack);
+      }
+    }
     const whole = await runWholeInsert(root, deps, text);
     if (!whole.completed) {
       traceWrite({

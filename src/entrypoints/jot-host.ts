@@ -845,10 +845,12 @@ function createHost(): HostController {
 
     // Model-driven editors (Lexical, Slate, ProseMirror/TipTap, Quill,
     // Draft.js, CKEditor) reconcile the DOM against internal state, so range
-    // surgery is silently reverted. Verified editing input instead.
+    // surgery is silently reverted. Verified editing input instead, rich
+    // HTML first when present (re-sanitized defensively; the overlay
+    // already sanitizes once).
     const richTextDeps = liveRichTextDeps(document, window, activeField);
     if (resolveFrameworkRoot(richTextDeps)) {
-      const result = await replaceRichText(text, richTextDeps);
+      const result = await replaceRichText(text, richTextDeps, html ? sanitizeRichHtml(html) : null);
       if (result.ok) capturedRange = null;
       return { ok: result.ok, diagnostics: result.diagnostics };
     }
@@ -1040,13 +1042,13 @@ function createHost(): HostController {
           }
           const richTextDeps = liveRichTextDeps(document, window, activeField);
           if (resolveFrameworkRoot(richTextDeps)) {
-            // Same verified-write contract as Slack: framework editors get
-            // plain text and the panel stays open on failure. The sanitized
-            // HTML rides along so a failed auto-insert stays manually
-            // pastable with formatting intact.
+            // Same verified-write contract as Slack, but framework editors
+            // get the rich HTML attempt first (plain-text fallback inside).
+            // The sanitized HTML also rides along on failure so a failed
+            // auto-insert stays manually pastable with formatting intact.
             insertInFlight = true;
             try {
-              const outcome = await insertText(msg.text);
+              const outcome = await insertText(msg.text, html);
               if (outcome.diagnostics) {
                 postInsertResult(outcome.ok, outcome.diagnostics);
               }
