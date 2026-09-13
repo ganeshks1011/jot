@@ -113,7 +113,7 @@ export default function App() {
   const [composerBg, setComposerBg] = useState<string | null>(null);
   const [composerFg, setComposerFg] = useState<string | null>(null);
   const [pageDark, setPageDark] = useState<boolean | null>(null);
-  const [connectorX, setConnectorX] = useState<number | null>(null);
+  const [, setConnectorX] = useState<number | null>(null);
   // Lexical keyed flow: index-path nodes from the host for the structure-
   // preserving rewrite. The result map drives `insertLexical`; absent
   // nodes (or any keyed failure) keep the existing string flow. Refs only:
@@ -733,20 +733,6 @@ export default function App() {
       style={cardVars}
       className={`jot-card-glow relative w-full gap-2 overflow-visible rounded-[8px] px-3 pb-3 pt-1 backdrop-blur-xl${paired ? " jot-paired" : ""}${isFullscreen ? " jot-fullscreen-card" : ""}`}
     >
-      {placement === "below" && (
-        <span
-          aria-hidden
-          className="jot-connector jot-connector-top"
-          style={connectorX != null ? { left: connectorX } : undefined}
-        />
-      )}
-      {placement === "above" && (
-        <span
-          aria-hidden
-          className="jot-connector jot-connector-bottom"
-          style={connectorX != null ? { left: connectorX } : undefined}
-        />
-      )}
       <Card.Header className="flex-row items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <img src={browser.runtime.getURL("/icon/icon128.png")} alt="" className="size-5 rounded-md" />

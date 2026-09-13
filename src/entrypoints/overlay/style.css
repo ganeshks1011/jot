@@ -130,32 +130,10 @@ body {
   color: var(--jot-cfg);
 }
 
-/* Connector diamond on the composer-facing card edge. The host sends the
-   card-relative x of the anchor box center (connectorX); without it, fall
-   back to card center. Flat fill matching the card face. */
-.jot-connector {
-  position: absolute;
-  left: 50%;
-  width: 10px;
-  height: 10px;
-  transform: translateX(-50%) rotate(45deg);
-  background: var(--jot-card-face);
-  pointer-events: none;
-  animation: none;
-}
-
-.jot-connector-top {
-  top: -5px;
-}
-
-.jot-connector-bottom {
-  bottom: -5px;
-}
-
 /* Read-only preview: no focus ring (explicit exception to the HeroUI ring
-   rule — focus context is conveyed by the composer highlight + connector,
-   and the box is never edited). Focus landing, trap order, and aria-label
-   are unchanged. */
+   rule — focus context is conveyed by the composer highlight, and the box
+   is never edited). Focus landing, trap order, and aria-label are
+   unchanged. */
 #jot-content:focus,
 #jot-content:focus-visible {
   outline: none;
@@ -244,7 +222,6 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .jot-card-glow,
-  .jot-connector,
   .jot-fullscreen-card,
   #jot-content {
     animation: none;
