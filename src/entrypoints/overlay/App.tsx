@@ -741,7 +741,7 @@ export default function App() {
           <img src={browser.runtime.getURL("/icon/icon128.png")} alt="" className="size-5 rounded-md" />
           <span className="jot-chrome text-sm font-medium tracking-tight">Jot</span>
         </div>
-        <div className="jot-chrome flex items-center gap-0.5">
+        <div className="jot-chrome -mr-1 flex items-center gap-0.5">
           {inserted && (
             <Chip size="sm" color="success" variant="soft">
               <Check className="size-3" />
@@ -750,7 +750,14 @@ export default function App() {
           )}
           <Tooltip>
             <Tooltip.Trigger className="inline-flex">
-              <Button isIconOnly size="sm" variant="ghost" aria-label="Open settings" onPress={openOptionsPage}>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="ghost"
+                className="rounded-lg"
+                aria-label="Open settings"
+                onPress={openOptionsPage}
+              >
                 <SettingsIcon className="size-4" />
               </Button>
             </Tooltip.Trigger>
@@ -758,7 +765,14 @@ export default function App() {
           </Tooltip>
           <Tooltip>
             <Tooltip.Trigger className="inline-flex">
-              <Button isIconOnly size="sm" variant="ghost" aria-label="Close Jot" onPress={close}>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="ghost"
+                className="rounded-lg"
+                aria-label="Close Jot"
+                onPress={close}
+              >
                 <X className="size-4" />
               </Button>
             </Tooltip.Trigger>
