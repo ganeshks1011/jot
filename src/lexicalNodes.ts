@@ -14,6 +14,12 @@ export interface LexicalTextNode {
   /** Index path from `root.children`, e.g. `"0/2/0"`. */
   id: string;
   text: string;
+  /**
+   * Nearest block-ancestor type (`paragraph`, `listitem`, `heading`, …).
+   * Lets clients rebuild list/paragraph structure without the full state.
+   * Ignored by apply and never sent to the model.
+   */
+  block: string;
 }
 
 interface LexicalNodeJson {
@@ -50,23 +56,24 @@ export function extractLexicalTextNodes(state: unknown): LexicalTextNode[] {
   const children = asNodeArray((root as LexicalRootJson)["children"]);
   if (!children) return [];
   const out: LexicalTextNode[] = [];
-  const walk = (nodes: LexicalNodeJson[], base: string): void => {
+  const walk = (nodes: LexicalNodeJson[], base: string, parentBlock: string): void => {
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       if (!isRecord(node)) continue;
       const path = base === "" ? `${i}` : `${base}/${i}`;
       const kids = asNodeArray(node["children"]);
       if (kids) {
-        walk(kids, path);
+        const childBlock = typeof node.type === "string" && node.type ? node.type : parentBlock;
+        walk(kids, path, childBlock);
         continue;
       }
       const text = node["text"];
       if (typeof text === "string" && text.length > 0) {
-        out.push({ id: path, text });
+        out.push({ id: path, text, block: parentBlock || "paragraph" });
       }
     }
   };
-  walk(children, "");
+  walk(children, "", "");
   return out;
 }
 

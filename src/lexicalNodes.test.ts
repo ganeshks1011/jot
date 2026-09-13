@@ -29,10 +29,10 @@ describe("extractLexicalTextNodes", () => {
       },
     };
     expect(extractLexicalTextNodes(state)).toEqual([
-      { id: "0/0", text: "Hello" },
-      { id: "0/1", text: "world" },
-      { id: "1/0/0", text: "one" },
-      { id: "1/1/0", text: "two" },
+      { id: "0/0", text: "Hello", block: "paragraph" },
+      { id: "0/1", text: "world", block: "paragraph" },
+      { id: "1/0/0", text: "one", block: "listitem" },
+      { id: "1/1/0", text: "two", block: "listitem" },
     ]);
   });
 
@@ -41,6 +41,21 @@ describe("extractLexicalTextNodes", () => {
     expect(extractLexicalTextNodes(null)).toEqual([]);
     expect(extractLexicalTextNodes({})).toEqual([]);
     expect(extractLexicalTextNodes({ root: { children: "nope" } })).toEqual([]);
+  });
+
+  it("records heading blocks and falls back to paragraph at root", () => {
+    const state = {
+      root: {
+        children: [
+          { type: "heading", children: [{ type: "text", text: "Title" }] },
+          { type: "text", text: "loose" },
+        ],
+      },
+    };
+    expect(extractLexicalTextNodes(state)).toEqual([
+      { id: "0/0", text: "Title", block: "heading" },
+      { id: "1", text: "loose", block: "paragraph" },
+    ]);
   });
 });
 
