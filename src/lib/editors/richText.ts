@@ -34,12 +34,12 @@
  *   the run instead of stacking another attempt on corrupted state.
  * - Two circuit-breakers (verbatim duplication, absolute growth) and a
  *   best-effort snapshot restore bound every failure mode.
- * - With sanitized HTML, a synthetic paste attempt runs before plain
- *   text (real DataTransfer on an untrusted paste event), with trusted
- *   execCommand insertHTML as the fallback: framework clipboard matchers
- *   build real nodes (lists, bold) from a paste-like input. Verified by
- *   item-text containment with the same breakers; any failure falls
- *   through to the plain path.
+ * - With sanitized HTML, clipboard-mediated paste runs first (trusted
+ *   path over overlay-written flavors), synthetic paste second, trusted
+ *   execCommand insertHTML last: framework clipboard matchers build real
+ *   nodes (lists, bold) from a paste-like input. Verified by item-text
+ *   containment with the same breakers; any failure falls through to the
+ *   plain path.
  */
 
 import { htmlToPlainText } from "../richText";
@@ -231,7 +231,7 @@ interface WriteOpOutcome {
   execReturn: boolean;
   skipped?: "coverage-pre" | "coverage-post" | "clear-failed" | "paste-unavailable";
   /** Which mechanism a completed HTML op used (trace + tests). */
-  mechanism?: "paste" | "exec";
+  mechanism?: "clipboard" | "paste" | "exec";
 }
 
 /**
@@ -393,21 +393,54 @@ async function runPasteInsert(root: EditableElement, deps: RichTextDeps, html: s
 }
 
 /**
- * Rich HTML insert into the cleared editor. Synthetic paste runs first
- * (untrusted event, real DataTransfer, native paste pipeline); trusted
- * execCommand insertHTML is the fallback. Chrome turns the command into a
- * paste-like input the framework's clipboard matchers build real nodes
- * from (lists, bold), unlike plain `insertText`. Caller verifies by
+ * Clipboard-mediated paste: the overlay wrote real clipboard flavors on
+ * Enter (same user gesture), so a plain `paste` command pulls them through
+ * the browser's most trusted path — no synthetic events involved. Gated
+ * like every op; Chrome may refuse without a manifest permission change
+ * (which is deliberately not attempted here) — verify decides, and the
+ * chain degrades to the tiers below. Caller flushes and verifies.
+ */
+async function runClipboardPaste(root: EditableElement, deps: RichTextDeps): Promise<WriteOpOutcome> {
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
+  let execReturn = false;
+  try {
+    execReturn = deps.execCommand("paste", false, "");
+  } catch {
+    // Verification decides; execCommand lies in both directions.
+  }
+  try {
+    root.dispatchEvent(deps.createInputEvent());
+  } catch {
+    // Verification decides; a dispatch failure alone is not fatal.
+  }
+  return { completed: true, execReturn };
+}
+
+/**
+ * Rich HTML insert into the cleared editor. Clipboard-mediated paste runs
+ * first (trusted path over overlay-written flavors), synthetic paste
+ * second, trusted execCommand insertHTML last. Caller verifies by
  * item-text containment and falls back to the plain path.
  */
 async function runHtmlInsert(
   root: EditableElement,
   deps: RichTextDeps,
   html: string,
-): Promise<WriteOpOutcome & { mechanism?: "paste" | "exec"; pasteTried?: boolean }> {
+): Promise<WriteOpOutcome & { mechanism?: "clipboard" | "paste" | "exec"; pasteTried?: boolean; clipboardTried?: boolean }> {
   const cleared = await clearEditor(root, deps);
   if (cleared === "failed") return { completed: false, execReturn: false, skipped: "clear-failed" };
   const plainExpected = normalizeComposerMultiline(htmlToPlainText(html));
+  // Attempt 0: clipboard-mediated paste. The overlay wrote real clipboard
+  // flavors on Enter; a trusted paste pulls them through the most native
+  // path. Falls through on refusal — no permission changes attempted.
+  const clipped = await runClipboardPaste(root, deps);
+  const clipboardTried = clipped.completed;
+  if (clipped.completed && plainExpected) {
+    await deps.waitForFlush();
+    const actual = normalizeComposerMultiline(readComposerText(root));
+    if (actual.includes(plainExpected))
+      return { ...clipped, mechanism: "clipboard" as const, clipboardTried: true };
+  }
   // Attempt 1: synthetic paste. On dispatch-but-no-verify, fall through to
   // exec below: re-select covers whatever the paste left, so the replace
   // heals partial application instead of stacking onto it.
@@ -431,7 +464,7 @@ async function runHtmlInsert(
   } catch {
     // Verification decides; a dispatch failure alone is not fatal.
   }
-  return { completed: true, execReturn, mechanism: "exec" as const, pasteTried };
+  return { completed: true, execReturn, mechanism: "exec" as const, pasteTried, clipboardTried };
 }
 
 /**
@@ -604,13 +637,23 @@ export async function replaceRichText(
         const htmlOk = actual.includes(plainExpected);
         traceWrite({
           attempt: diag.attempts,
-          op: rich.mechanism === "paste" ? "html-paste" : "html-exec",
+          op:
+            rich.mechanism === "clipboard"
+              ? "html-clipboard-paste"
+              : rich.mechanism === "paste"
+                ? "html-paste"
+                : "html-exec",
           execReturn: rich.execReturn,
           preOpLen,
           postOpLen: actual.length,
           verifyOk: htmlOk,
           sameRoot,
-          detail: rich.mechanism === "exec" && rich.pasteTried ? "paste-unverified" : undefined,
+          detail:
+            rich.mechanism === "exec" && rich.pasteTried
+              ? "paste-unverified"
+              : rich.mechanism === "exec" && rich.clipboardTried
+                ? "clipboard-unverified"
+                : undefined,
         });
         if (isDuplicated(actual, plainExpected) || isOvergrown(actual.length, diag.preLen, plainExpected.length)) {
           break;

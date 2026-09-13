@@ -514,7 +514,7 @@ describe("replaceRichText", () => {
     const d = deps({ field: root, closestFromField: closest, execCommand });
     const result = await replaceRichText("one\ntwo", d, html);
     expect(result.ok).toBe(true);
-    expect(commands).toEqual(["delete", "insertHTML"]);
+    expect(commands).toEqual(["delete", "paste", "insertHTML"]);
   });
 
   it("falls back to plain text when insertHTML is refused", async () => {
@@ -534,6 +534,7 @@ describe("replaceRichText", () => {
     const result = await replaceRichText("Replacement text here", d, html);
     expect(result.ok).toBe(true);
     expect(commands[0]).toBe("delete");
+    expect(commands).toContain("paste");
     expect(commands).toContain("insertHTML");
     expect(commands).toContain("insertText");
   });
@@ -580,8 +581,9 @@ describe("replaceRichText", () => {
     spy.mockRestore();
     expect(result.ok).toBe(true);
     expect(root.innerText).toBe("- one\n- two");
-    // Paste landed: execCommand never ran insertHTML or insertText.
-    expect(commands).toEqual(["delete"]);
+    // Clipboard-paste refused, synthetic paste landed: execCommand never
+    // ran insertHTML or insertText.
+    expect(commands).toEqual(["delete", "paste"]);
     // Both clipboard flavors were set from the sanitized HTML.
     expect(flavors).toContainEqual({ format: "text/html", data: html });
     expect(flavors).toContainEqual({ format: "text/plain", data: htmlToPlainText(html) });
@@ -621,7 +623,7 @@ describe("replaceRichText", () => {
     const result = await replaceRichText("one\ntwo", d, html);
     spy.mockRestore();
     expect(result.ok).toBe(true);
-    expect(commands).toEqual(["delete", "insertHTML"]);
+    expect(commands).toEqual(["delete", "paste", "insertHTML"]);
     const htmlTrace = seen.find((t) => t.op === "html-exec");
     expect(htmlTrace?.detail).toBe("paste-unverified");
   });
@@ -653,7 +655,73 @@ describe("replaceRichText", () => {
     });
     const result = await replaceRichText("one\ntwo", d, html);
     expect(result.ok).toBe(true);
-    expect(commands).toEqual(["delete", "insertHTML"]);
+    expect(commands).toEqual(["delete", "paste", "insertHTML"]);
+  });
+
+  it("pastes from the real clipboard before trying synthetic paste", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const html = "<ul><li>one</li><li>two</li></ul>";
+    const commands: string[] = [];
+    const execCommand = vi.fn((command: string, _showUI: boolean, _value: string) => {
+      commands.push(command);
+      if (command === "delete") {
+        root.innerText = "";
+        return true;
+      }
+      // Clipboard flavors were primed by the overlay: the trusted paste
+      // lands list content with no synthetic events involved.
+      if (command === "paste") {
+        root.innerText = "- one\n- two";
+        return true;
+      }
+      return false;
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const seen: Array<Record<string, unknown>> = [];
+    const spy = vi.spyOn(console, "debug").mockImplementation((...args: unknown[]) => {
+      if (args[0] === "[jot] rich-write") seen.push(args[1] as Record<string, unknown>);
+    });
+    const result = await replaceRichText("one\ntwo", d, html);
+    spy.mockRestore();
+    expect(result.ok).toBe(true);
+    expect(root.innerText).toBe("- one\n- two");
+    // Trusted paste landed: synthetic and execCommand HTML never ran.
+    expect(commands).toEqual(["delete", "paste"]);
+    expect(seen.map((t) => t.op)).toContain("html-clipboard-paste");
+  });
+
+  it("falls through the full chain when the clipboard paste is refused", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const html = "<ul><li>one</li><li>two</li></ul>";
+    const commands: string[] = [];
+    const execCommand = vi.fn((command: string, _showUI: boolean, value: string) => {
+      commands.push(command);
+      if (command === "delete") {
+        root.innerText = "";
+        return true;
+      }
+      // Clipboard paste refused (no permission): nothing applied.
+      if (command === "paste") return false;
+      if (command === "insertHTML") return false;
+      if (command === "insertText") {
+        root.innerText = value;
+        return true;
+      }
+      return false;
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const seen: Array<Record<string, unknown>> = [];
+    const spy = vi.spyOn(console, "debug").mockImplementation((...args: unknown[]) => {
+      if (args[0] === "[jot] rich-write") seen.push(args[1] as Record<string, unknown>);
+    });
+    const result = await replaceRichText("Replacement text here", d, html);
+    spy.mockRestore();
+    expect(result.ok).toBe(true);
+    // Empty-editor clears are no-ops, so no second delete precedes insertText.
+    expect(commands).toEqual(["delete", "paste", "insertHTML", "insertText"]);
+    expect(seen.map((t) => t.op)).not.toContain("html-clipboard-paste");
+    const htmlTrace = seen.find((t) => t.op === "html-exec");
+    expect(htmlTrace?.detail).toBe("clipboard-unverified");
   });
 });
 

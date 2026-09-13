@@ -73,6 +73,27 @@ function prepareDomCopy(el: ContentNodeLike): void {
   sel.selectAllChildren(el as unknown as Node);
 }
 
+/**
+ * Best-effort clipboard priming for the host's clipboard-paste tier: write
+ * HTML flavors when present so a trusted paste pulls them through the most
+ * native path. Never throws, never blocks the insert that follows. Plain
+ * inserts skip the clipboard entirely.
+ */
+async function primeClipboardForInsert(html: string | null, plain: string): Promise<void> {
+  if (!html?.trim()) return;
+  try {
+    await copyDomHtml(
+      () => document.getElementById("jot-content") as ContentNodeLike | null,
+      typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
+      document,
+      () => document.execCommand("copy"),
+      prepareDomCopy,
+    );
+  } catch {
+    // Best effort only; the host's other tiers do not depend on it.
+  }
+}
+
 export default function App() {
   const [source, setSource] = useState("");
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
@@ -522,13 +543,15 @@ export default function App() {
   }, []);
 
   const insertText = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (!text) return;
       const keyedMap = mapRef.current;
       if (keyedMap) {
         // Keyed flow: the host commits the map through the live Lexical
         // instance; `text` is the plain fallback and `html` the built
-        // preview HTML for rich fallback and failure-panel paste.
+        // preview HTML for rich fallback and failure-panel paste. Prime the
+        // clipboard first so the trusted paste tier has real flavors.
+        await primeClipboardForInsert(keyedHtml, text);
         postToParent({ type: "insertLexical", map: keyedMap, text, html: keyedHtml });
         setInserted(true);
         void track("rewrite_applied", {
@@ -556,9 +579,11 @@ export default function App() {
       // Formatted output travels as both: plain text for textarea/Slack and
       // the sanitized HTML fragment for rich contenteditables. The host picks
       // per target; text-only hosts ignore `html` entirely. Keyed off the
-      // text content so preview, copy, and insert always agree.
+      // text content so preview, copy, and insert always agree. Prime the
+      // clipboard first so the trusted paste tier has real flavors.
       const outputHtml = /<[a-zA-Z]/.test(text) ? sanitizeRichHtml(text) : null;
       const plain = outputHtml ? htmlToPlainText(text) : text;
+      await primeClipboardForInsert(outputHtml, plain);
       postToParent({ type: "insert", text: plain, html: outputHtml });
       setInserted(true);
       // Host-confirmed only on the verified Slack path; elsewhere the host
@@ -585,7 +610,7 @@ export default function App() {
         postToParent({ type: "close" });
       }, 700);
     },
-    [],
+    [keyedHtml],
   );
 
   // Abort any in-flight stream when the overlay unmounts.
@@ -680,7 +705,7 @@ export default function App() {
       if (el.id === "jot-content") {
         // Apply the rewrite back into the source field.
         event.preventDefault();
-        if (output) insertText(output);
+        if (output) void insertText(output);
       } else if (el.id === "jot-feedback") {
         // Refetch with the current tweak instruction (no apply).
         event.preventDefault();
