@@ -1,7 +1,7 @@
-import { useCallback, useRef, useState, type MutableRefObject } from "react";
-import type { JotHostAdapter } from "./adapter";
-import { toRewriteError, type RewriteErrorShape } from "./adapter";
+import { type MutableRefObject, useCallback, useRef, useState } from "react";
 import type { ContentStatus } from "../components/ContentBox";
+import type { JotHostAdapter } from "./adapter";
+import { type RewriteErrorShape, toRewriteError } from "./adapter";
 import { buildCacheKey, isCacheHit } from "./generation";
 
 export function useJotGeneration(

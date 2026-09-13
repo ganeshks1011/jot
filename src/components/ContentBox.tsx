@@ -63,7 +63,7 @@ export function ContentBox({ output, status, htmlPreview, sanitize }: ContentBox
       value={output}
       placeholder="Rewritten text appears here. Press Enter to insert it."
       variant="secondary"
-      className="min-h-16 w-full resize-none border-0 bg-transparent px-1 shadow-none scrollbar-thin"
+      className="w-full resize-none scrollbar-thin"
     />
   );
 }

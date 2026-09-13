@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { copyDomHtml, copyHtml, copyText, type ContentNodeLike } from "./clipboard";
+import { type ContentNodeLike, copyDomHtml, copyHtml, copyText } from "./clipboard";
 
 function doc(): { doc: Document; area: { value: string; select: () => void; remove: () => void } } {
   const area = { value: "", select: vi.fn(), remove: vi.fn() };
@@ -156,9 +156,12 @@ describe("copyDomHtml", () => {
     expect(await copyDomHtml(() => null, { writeText: vi.fn() })).toBe(false);
     expect(await copyDomHtml(() => divNode("   ", "x"), { writeText: vi.fn() })).toBe(false);
     expect(
-      await copyDomHtml(() => {
-        throw new Error("no DOM");
-      }, { writeText: vi.fn() }),
+      await copyDomHtml(
+        () => {
+          throw new Error("no DOM");
+        },
+        { writeText: vi.fn() },
+      ),
     ).toBe(false);
   });
 

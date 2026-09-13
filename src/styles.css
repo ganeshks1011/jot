@@ -97,6 +97,47 @@
   }
 }
 
+/* JotAssistant structural layout. These live here (unlayered) rather
+   than as Tailwind utilities because HeroUI component styles are
+   unlayered on full-bundle hosts, where layered utilities always lose
+   (header stacked vertically, padded text readout). Doubled classes beat
+   the single-class component rules by specificity on every host; values
+   mirror the extension overlay so both render one design. */
+.jot-assistant.jot-assistant {
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem 0.75rem;
+  border-radius: 8px;
+  overflow: visible;
+}
+.jot-assistant .card__header.card__header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.jot-assistant .card__content.card__content {
+  gap: 0.375rem;
+  padding-top: 0.25rem;
+}
+.jot-assistant .card__footer.card__footer {
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+/* Read-only result box and tweak input: ids land on the native elements,
+   so these beat the component field styles (bordered inputs) everywhere. */
+#jot-content {
+  border-width: 0;
+  background-color: transparent;
+  box-shadow: none;
+  min-height: 4rem;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+#jot-feedback {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
 /* Scroll-journey snap: applied to the document root while the landing is
    mounted (it must live on the scroll container). Proximity only — free
    scroll is never trapped. Disabled under reduced motion. */

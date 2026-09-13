@@ -14,14 +14,13 @@ import { Tooltip } from "@heroui/react/tooltip";
 import type { LexicalTextNode } from "@wurkflo/shared";
 import { Check, Settings as SettingsIcon, X } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
-import type { RewriteUpgrade } from "./adapter";
 import { ContentBox } from "../components/ContentBox";
 import { FeedbackInput } from "../components/FeedbackInput";
-import type { InsertFailureMetrics, JotHostAdapter } from "./adapter";
-import { buildKeyedHtml } from "./keyedHtml";
-import { copyDomHtml, copyHtml, type ContentNodeLike } from "./clipboard";
+import type { InsertFailureMetrics, JotHostAdapter, RewriteUpgrade } from "./adapter";
+import { type ContentNodeLike, copyDomHtml, copyHtml } from "./clipboard";
 import { describeInsertMetrics, errorMessage } from "./errorText";
-import { selectHelperText, zoneForTarget, type FocusZone } from "./helperText";
+import { type FocusZone, selectHelperText, zoneForTarget } from "./helperText";
+import { buildKeyedHtml } from "./keyedHtml";
 import { useJotGeneration } from "./useJotGeneration";
 
 export interface JotSource {
@@ -60,13 +59,7 @@ interface JotAssistantProps {
 }
 
 /** Upgrade action with the upgrade payload captured (avoids re-narrowing). */
-function UpgradeButton({
-  upgrade,
-  onUpgrade,
-}: {
-  upgrade: RewriteUpgrade;
-  onUpgrade: (info: RewriteUpgrade) => void;
-}) {
+function UpgradeButton({ upgrade, onUpgrade }: { upgrade: RewriteUpgrade; onUpgrade: (info: RewriteUpgrade) => void }) {
   return (
     <Button size="sm" variant="primary" onPress={() => onUpgrade(upgrade)}>
       {upgrade.name ? `Upgrade to ${upgrade.name}` : "Upgrade"}
@@ -613,9 +606,9 @@ export function JotAssistant({
     <Card
       ref={rootRef}
       style={cardVars}
-      className={`jot-card-glow relative w-full gap-2 overflow-visible rounded-[8px] px-3 pb-3 pt-1 backdrop-blur-xl${paired ? " jot-paired" : ""}${isFullscreen ? " jot-fullscreen-card" : ""}`}
+      className={`jot-card-glow jot-assistant relative w-full overflow-visible backdrop-blur-xl${paired ? " jot-paired" : ""}${isFullscreen ? " jot-fullscreen-card" : ""}`}
     >
-      <Card.Header className="flex-row items-center justify-between gap-2">
+      <Card.Header className="items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <img src={adapter.logoSrc} alt="" className="size-5 rounded-md" />
           <span className="jot-chrome text-sm font-medium tracking-tight">Jot</span>
@@ -644,7 +637,14 @@ export function JotAssistant({
           </Tooltip>
           <Tooltip>
             <Tooltip.Trigger className="inline-flex">
-              <Button isIconOnly size="sm" variant="ghost" className="rounded-lg" aria-label="Close Jot" onPress={close}>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="ghost"
+                className="rounded-lg"
+                aria-label="Close Jot"
+                onPress={close}
+              >
                 <X className="size-4" />
               </Button>
             </Tooltip.Trigger>
@@ -653,7 +653,7 @@ export function JotAssistant({
         </div>
       </Card.Header>
 
-      <Card.Content className="gap-1.5 pt-1">
+      <Card.Content>
         {error ? (
           error.kind === "quota" ? (
             <div className="rounded-lg border border-warning/30 bg-warning-soft/40 p-3 text-xs" role="alert">
@@ -738,7 +738,7 @@ export function JotAssistant({
         })()}
       </Card.Content>
 
-      <Card.Footer className="gap-2 pt-1">
+      <Card.Footer>
         <FeedbackInput
           value={inputText}
           onChange={setInputText}

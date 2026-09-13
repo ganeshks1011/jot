@@ -40,7 +40,7 @@ export function FeedbackInput({
         aria-label={placeholder}
         fullWidth
         variant="secondary"
-        className="h-8 min-w-0 flex-1 text-xs"
+        className="h-8 min-w-0 flex-1"
         disabled={disabled}
       />
       <Button
