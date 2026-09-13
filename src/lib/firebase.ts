@@ -18,6 +18,15 @@ const firebaseConfig = {
 };
 
 function getAppInstance(): FirebaseApp {
+  if (!firebaseConfig.apiKey) {
+    // Fail fast with an actionable message: without the key, Firebase
+    // throws a cryptic auth/invalid-api-key from its internals instead.
+    // The extension reads only apps/jot/.env (see apps/jot/.env.example);
+    // root .env never feeds WXT builds. Rebuild after changing it.
+    throw new Error(
+      "Missing VITE_FIREBASE_API_KEY: copy .env into apps/jot (same Firebase project as the web app) and rebuild the extension.",
+    );
+  }
   return getApps().length ? getApp() : initializeApp(firebaseConfig);
 }
 

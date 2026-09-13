@@ -17,6 +17,10 @@ npm run typecheck    # tsc --noEmit (strict)
 
 Style is repo-wide: Biome config lives at the monorepo root — run `npm run format` / `npm run format:check` from the root, not here. TypeScript `strict:true`; path alias `@/*` is extension-local (`~/*` is web-only, `@wurkflo/shared` is cross-workspace).
 
+## Env
+
+Firebase config comes only from `apps/jot/.env` (see `.env.example`; same Firebase project as the web app — the extension signs in with backend-minted custom tokens, which are project-bound). Root `.env` never feeds WXT builds. Rebuild after any env change; never commit `.env`.
+
 ## Structure
 - `src/entrypoints/` — `background.ts`, `jot-host.ts` (unlisted script, injected on demand), `overlay/`, `options/`, `auth-callback/`, `jot-blocked/`. WXT generates the manifest from `wxt.config.ts`; do not hand-edit a `manifest.json`.
 - `src/lib/` — framework-agnostic logic (types, styles, prompts, providers, api, storage, net). Shared by overlay, options, and background.
