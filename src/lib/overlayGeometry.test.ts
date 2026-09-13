@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   estimatePanelHeight,
   FLOAT_CARD_WIDTH,
+  isDarkBackground,
   isTransparentBackground,
   MODAL_CARD_WIDTH,
   pickOpaqueBackground,
@@ -189,5 +190,26 @@ describe("pickOpaqueBackground", () => {
 
   it("returns null when everything is transparent", () => {
     expect(pickOpaqueBackground(["transparent", "rgba(0,0,0,0)"])).toBeNull();
+  });
+});
+
+describe("isDarkBackground", () => {
+  it("classifies rgb black and white", () => {
+    expect(isDarkBackground("rgb(0, 0, 0)")).toBe(true);
+    expect(isDarkBackground("rgb(255, 255, 255)")).toBe(false);
+  });
+
+  it("classifies hex short and long forms", () => {
+    expect(isDarkBackground("#000")).toBe(true);
+    expect(isDarkBackground("#fff")).toBe(false);
+    expect(isDarkBackground("#1e3a5f")).toBe(true);
+    expect(isDarkBackground("#f5f5f5")).toBe(false);
+  });
+
+  it("returns null for transparent or unparsable input", () => {
+    expect(isDarkBackground("transparent")).toBeNull();
+    expect(isDarkBackground("rgba(0, 0, 0, 0)")).toBeNull();
+    expect(isDarkBackground("CanvasText")).toBeNull();
+    expect(isDarkBackground("")).toBeNull();
   });
 });

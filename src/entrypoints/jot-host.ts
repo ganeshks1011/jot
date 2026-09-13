@@ -17,6 +17,8 @@ import {
 import { buildInitKey, shouldSendInit } from "@/lib/initHandshake";
 import {
   IFRAME_MARGIN,
+  isDarkBackground,
+  isTransparentBackground,
   MODAL_CARD_WIDTH,
   type OverlayPlacement,
   pickOpaqueBackground,
@@ -97,6 +99,12 @@ function createHost(): HostController {
   let capturedHtml: string | null = null;
   let capturedHasFormatting = false;
   let capturedMultiline = false;
+  /**
+   * The visible bordered box for highlight + anchoring. Usually the field
+   * itself; for framework editors (Lexical, Slack) it is the bordered
+   * ancestor wrapper. Resolved once per open; null for plain selections.
+   */
+  let highlightBox: HTMLElement | null = null;
   let panelVisible = false;
   let pendingShow: ReturnType<typeof setTimeout> | null = null;
   let destroyed = false;
@@ -234,7 +242,10 @@ function createHost(): HostController {
     frame.style.background = "transparent";
     frame.style.zIndex = "2147483647";
     frame.style.visibility = "hidden";
-    frame.style.transition = "height 120ms ease, opacity 120ms ease";
+    // Opacity only until the first placement lands; openPanel enables the
+    // full glide transition afterwards so the panel never flies in from a
+    // corner on open.
+    frame.style.transition = "opacity 150ms ease";
     frame.style.opacity = "0";
     frame.setAttribute("aria-label", "Jot assistant");
 
@@ -243,9 +254,25 @@ function createHost(): HostController {
     return frame;
   }
 
+  /**
+   * Glide follow-up placements (streaming growth, scroll, viewport resize).
+   * Enabled only after the first placement lands so open never flies in
+   * from a corner. Skipped entirely under prefers-reduced-motion.
+   */
+  function enableSmoothResize(frame: HTMLIFrameElement): void {
+    try {
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+      frame.style.transition =
+        "height 260ms ease, width 260ms ease, left 260ms ease, top 260ms ease, opacity 150ms ease";
+    } catch {
+      // Transition is cosmetic; never break open.
+    }
+  }
+
   function anchorRect(): DOMRect | null {
-    if (!activeField) return null;
-    const rect = activeField.getBoundingClientRect();
+    const box = highlightBox ?? activeField;
+    if (!box) return null;
+    const rect = box.getBoundingClientRect();
     if (!rect || (rect.width === 0 && rect.height === 0)) return null;
     return rect;
   }
@@ -261,6 +288,31 @@ function createHost(): HostController {
     return rect ? { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width } : null;
   }
 
+  /**
+   * The bordered box to highlight and anchor to. Most fields carry their own
+   * border; framework editors render a borderless inner node inside a
+   * bordered wrapper, so climb for the nearest ancestor with a painted
+   * border. Falls back to the field itself.
+   */
+  function resolveHighlightBox(): HTMLElement | null {
+    if (!activeField) return null;
+    try {
+      let el: Element | null = activeField;
+      for (let i = 0; i < 6 && el; i++) {
+        if (el instanceof HTMLElement && el !== document.documentElement) {
+          const cs = window.getComputedStyle(el);
+          const width = Number.parseFloat(cs.borderTopWidth || "0");
+          if (width > 0 && !isTransparentBackground(cs.borderTopColor || "")) return el;
+        }
+        el = el.parentElement;
+        if (el === document.body || el === document.documentElement) break;
+      }
+    } catch {
+      // Fall through to the field itself.
+    }
+    return activeField;
+  }
+
   // Last computed placement, sent with init so the overlay can draw its
   // connector on the composer-facing edge.
   let lastPlacement: OverlayPlacement = "float";
@@ -269,6 +321,9 @@ function createHost(): HostController {
   // Once content trips the center-modal threshold, stay modal for the rest
   // of the open session. Avoids flip-flop while streaming grows the panel.
   let modalPinned = false;
+  // Card-relative x of the connector diamond (null = hidden). Recomputed
+  // with every placement so it tracks the anchor box, not the card center.
+  let lastConnectorX: number | null = null;
 
   function positionIframe(height: number): void {
     if (!iframe) return;
@@ -279,6 +334,12 @@ function createHost(): HostController {
     if (g.placement === "center") modalPinned = true;
     lastPlacement = g.placement;
     lastMaxPanelHeight = resolveMaxPanelHeight(viewport, anchor, g.placement);
+    if (g.placement === "center" || g.placement === "float" || !anchor) {
+      lastConnectorX = null;
+    } else {
+      const centerX = anchor.left + anchor.width / 2 - g.left;
+      lastConnectorX = Math.max(14, Math.min(centerX, g.cardWidth - 14));
+    }
     if (g.placement === "center") {
       // Fullscreen frame hosts the dimmed backdrop; the card itself is
       // centered inside the overlay document (800px max width).
@@ -332,6 +393,8 @@ function createHost(): HostController {
         maxPanelHeight: lastMaxPanelHeight,
         composerBg: colors.bg,
         composerFg: colors.fg,
+        pageDark: colors.pageDark,
+        connectorX: lastConnectorX,
         html: capturedHtml,
         hasFormatting: capturedHasFormatting,
         multiline: capturedMultiline,
@@ -340,8 +403,9 @@ function createHost(): HostController {
     );
   }
 
-  /** Push placement + panel budget after viewport resizes (scroll reuses
-   *  the last values; the iframe clamp guards overflow in between). */
+  /** Push placement + panel budget + connector offset after viewport
+   *  resizes (scroll reuses the last values; the iframe clamp guards
+   *  overflow in between). */
   function postMetrics(): void {
     if (!iframe || !panelVisible) return;
     iframe.contentWindow?.postMessage(
@@ -349,6 +413,7 @@ function createHost(): HostController {
         type: "metrics",
         placement: lastPlacement,
         maxPanelHeight: lastMaxPanelHeight,
+        connectorX: lastConnectorX,
       },
       "*",
     );
@@ -375,10 +440,11 @@ function createHost(): HostController {
 
   function observeField(): void {
     disconnectFieldObserver();
-    if (!activeField) return;
+    const target = highlightBox ?? activeField;
+    if (!target) return;
     try {
       fieldObserver = new ResizeObserver(() => handleReposition());
-      fieldObserver.observe(activeField);
+      fieldObserver.observe(target);
     } catch {
       fieldObserver = null;
     }
@@ -394,11 +460,12 @@ function createHost(): HostController {
   }
 
   /**
-   * Sample the composer's painted colors for the overlay to mirror. Reads
-   * computed colors only. Never page text.
+   * Sample the composer's painted colors for the overlay to mirror, plus
+   * whether the page is dark (for a neutral shadow). Reads computed colors
+   * only. Never page text.
    */
-  function sampleComposerColors(): { bg: string | null; fg: string | null } {
-    if (!activeField) return { bg: null, fg: null };
+  function sampleComposerColors(): { bg: string | null; fg: string | null; pageDark: boolean | null } {
+    if (!activeField) return { bg: null, fg: null, pageDark: null };
     try {
       const fg = window.getComputedStyle(activeField).color || null;
       const bgs: string[] = [];
@@ -407,65 +474,36 @@ function createHost(): HostController {
         bgs.push(window.getComputedStyle(el).backgroundColor);
         el = el.parentElement;
       }
-      return { bg: pickOpaqueBackground(bgs), fg };
+      const bg = pickOpaqueBackground(bgs);
+      return { bg, fg, pageDark: bg ? isDarkBackground(bg) : null };
     } catch {
-      return { bg: null, fg: null };
+      return { bg: null, fg: null, pageDark: null };
     }
   }
 
-  // Soft red→violet aura marking the active composer. A finite pulse plays
-  // on open (then settles on the static glow), driven by one injected
-  // <style> tag. Previous inline styles are restored and the tag removed on
-  // close so the page is left untouched.
-  const AURA_STYLE_ID = "jot-composer-aura";
+  // Professional highlight marking the bordered composer box: a thin
+  // outline in the composer's own text color plus a soft neutral shadow
+  // (white on dark pages, black on light pages). Previous inline styles are
+  // restored on close so the page is left untouched. No animation, so there
+  // is nothing to gate behind prefers-reduced-motion.
   let glowTarget: HTMLElement | null = null;
   let glowPrevBoxShadow = "";
   let glowPrevOutline = "";
 
-  function ensureAuraStylesheet(): boolean {
-    try {
-      if (document.getElementById(AURA_STYLE_ID)) return true;
-      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-        return false;
-      }
-      const tag = document.createElement("style");
-      tag.id = AURA_STYLE_ID;
-      tag.textContent =
-        "@keyframes jot-composer-pulse{" +
-        "0%{box-shadow:inset 0 0 24px 6px color-mix(in srgb,#ef4444 18%,transparent),0 0 12px 1px color-mix(in srgb,#ef4444 25%,transparent),0 0 28px 4px color-mix(in srgb,#7c3aed 15%,transparent);}" +
-        "50%{box-shadow:inset 0 0 30px 9px color-mix(in srgb,#ef4444 24%,transparent),0 0 16px 2px color-mix(in srgb,#ef4444 32%,transparent),0 0 36px 6px color-mix(in srgb,#7c3aed 20%,transparent);}" +
-        "100%{box-shadow:inset 0 0 24px 6px color-mix(in srgb,#ef4444 18%,transparent),0 0 12px 1px color-mix(in srgb,#ef4444 25%,transparent),0 0 28px 4px color-mix(in srgb,#7c3aed 15%,transparent);}" +
-        "}" +
-        ".jot-composer-aura{animation:jot-composer-pulse 1.8s ease-in-out 3;animation-fill-mode:forwards;}";
-      (document.head ?? document.documentElement).appendChild(tag);
-      return true;
-    } catch {
-      // Page CSP or DOM state may forbid the tag; static glow still applies.
-      return false;
-    }
-  }
-
-  function removeAuraStylesheet(): void {
-    try {
-      document.getElementById(AURA_STYLE_ID)?.remove();
-    } catch {
-      // Never break teardown.
-    }
-  }
-
   function applyComposerGlow(): void {
     clearComposerGlow();
-    if (!activeField || !activeField.isConnected) return;
+    const target = highlightBox ?? activeField;
+    if (target?.isConnected !== true) return;
     try {
-      glowTarget = activeField;
-      glowPrevBoxShadow = activeField.style.boxShadow;
-      glowPrevOutline = activeField.style.outline;
-      const animated = ensureAuraStylesheet();
-      activeField.style.boxShadow =
-        "inset 0 0 24px 6px color-mix(in srgb, #ef4444 18%, transparent), " +
-        "0 0 12px 1px color-mix(in srgb, #ef4444 25%, transparent), " +
-        "0 0 28px 4px color-mix(in srgb, #7c3aed 15%, transparent)";
-      if (animated) activeField.classList.add("jot-composer-aura");
+      glowTarget = target;
+      glowPrevBoxShadow = target.style.boxShadow;
+      glowPrevOutline = target.style.outline;
+      const colors = sampleComposerColors();
+      target.style.outline = `2px solid ${colors.fg ?? "currentColor"}`;
+      target.style.boxShadow =
+        colors.pageDark === true
+          ? "0 0 0 4px rgb(255 255 255 / 0.12), 0 4px 18px rgb(255 255 255 / 0.1)"
+          : "0 0 0 4px rgb(0 0 0 / 0.08), 0 4px 18px rgb(0 0 0 / 0.12)";
     } catch {
       glowTarget = null;
     }
@@ -474,14 +512,12 @@ function createHost(): HostController {
   function clearComposerGlow(): void {
     if (!glowTarget) return;
     try {
-      glowTarget.classList.remove("jot-composer-aura");
       glowTarget.style.boxShadow = glowPrevBoxShadow;
       glowTarget.style.outline = glowPrevOutline;
     } catch {
       // Never break teardown.
     }
     glowTarget = null;
-    removeAuraStylesheet();
   }
 
   function handleReposition(): void {
@@ -505,11 +541,13 @@ function createHost(): HostController {
   function openPanel(): void {
     const frame = ensureIframe();
     captureSelection();
+    highlightBox = resolveHighlightBox();
 
     frame.style.visibility = "visible";
     frame.style.opacity = "1";
     panelVisible = true;
     modalPinned = false;
+    lastConnectorX = null;
     attachReposition();
     observeField();
     applyComposerGlow();
@@ -526,6 +564,7 @@ function createHost(): HostController {
       modalPinned = true;
     }
     positionIframe(modalPinned ? viewport.height : 160);
+    enableSmoothResize(frame);
 
     // Fast path: send init once the frame has loaded. The overlay also sends
     // { type: "ready" } once its listener is attached, which re-sends init and
@@ -946,6 +985,7 @@ function createHost(): HostController {
     disconnectFieldObserver();
     clearComposerGlow();
     activeField = null;
+    highlightBox = null;
     capturedRange = null;
     capturedText = "";
     capturedPills = [];

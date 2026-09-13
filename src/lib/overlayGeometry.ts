@@ -185,3 +185,32 @@ export function pickOpaqueBackground(colors: string[]): string | null {
   }
   return null;
 }
+
+/**
+ * True when a painted background is dark (luminance below midpoint), false
+ * when light, null when unparsable. The host uses it to pick a neutral
+ * shadow color (white on dark pages, black on light pages).
+ */
+export function isDarkBackground(color: string): boolean | null {
+  const c = color.trim().toLowerCase();
+  const rgba = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/.exec(c);
+  let r: number;
+  let g: number;
+  let b: number;
+  if (rgba) {
+    if (rgba[4] !== undefined && Number(rgba[4]) <= 0) return null;
+    r = Number(rgba[1]);
+    g = Number(rgba[2]);
+    b = Number(rgba[3]);
+  } else {
+    const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(c);
+    if (!hex) return null;
+    const h = hex[1] ?? "";
+    const full = h.length === 3 ? h.replace(/./g, "$&$&") : h;
+    r = Number.parseInt(full.slice(0, 2), 16);
+    g = Number.parseInt(full.slice(2, 4), 16);
+    b = Number.parseInt(full.slice(4, 6), 16);
+  }
+  if (![r, g, b].every((v) => Number.isFinite(v) && v >= 0 && v <= 255)) return null;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
+}
