@@ -55,9 +55,9 @@ interface ProviderAdapter {
 }
 ```
 
-- `openaiAdapter` — default `https://api.openai.com/v1`, user supplies base URL + API key + model. Works with any OpenAI-compatible endpoint (DeepSeek, Ollama `http://localhost:11434/v1`, LM Studio).
+- `openaiAdapter` — default `https://api.openai.com/v1`, user supplies base URL + API key + model. Works with any OpenAI-compatible endpoint (DeepSeek, LM Studio).
 - `wurkfloAdapter` — same OpenAI-compatible fetch shape, configured base URL + optional key/model; tier limits enforced server-side. Built now as a working stub behind the interface so it is drop-in replaceable.
-- Ollama path: no `Authorization` header (local, no auth).
+- `ollamaAdapter` — first-class builtin (`http://localhost:11434/v1`, recommended model `qwen2.5`). Implemented: keyless loopback requests send no `Authorization` header (local, no auth).
 
 ### `src/lib/api.ts` — request flow
 

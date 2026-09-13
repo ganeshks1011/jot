@@ -1,4 +1,4 @@
-import { relayFetch } from "../net";
+import { isLoopbackUrl, relayFetch } from "../net";
 import type { BackendConfig } from "../types";
 import { type ProviderAdapter, ProviderError } from "./types";
 
@@ -57,7 +57,11 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   }
 
   async rewrite(config: BackendConfig, apiKey: string, system: string, user: string): Promise<string> {
-    if (!apiKey) throw new ProviderError("no-key", "No API key configured");
+    // Local model servers (Ollama, LM Studio) take no key: allow keyless
+    // requests to loopback base URLs and omit the auth header. Anything else
+    // still requires a key so remote endpoints never go out unauthenticated.
+    const keyless = !apiKey && isLoopbackUrl(config.baseUrl);
+    if (!apiKey && !keyless) throw new ProviderError("no-key", "No API key configured");
     if (!config.baseUrl) throw new ProviderError("network", "Base URL is not configured");
 
     const path = this.opts.chatCompletionsPath ?? "/chat/completions";
@@ -150,7 +154,9 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
   }
 
   async listModels(config: BackendConfig, apiKey: string): Promise<string[]> {
-    if (!apiKey) throw new ProviderError("no-key", "No API key configured");
+    if (!apiKey && !isLoopbackUrl(config.baseUrl)) {
+      throw new ProviderError("no-key", "No API key configured");
+    }
     const path = this.opts.modelsPath ?? "/models";
     const url = `${config.baseUrl.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
 
@@ -218,8 +224,9 @@ export class OpenAICompatibleProvider implements ProviderAdapter {
     }
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
     };
+    // Keyless loopback requests carry no Authorization header at all.
+    if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
     if (this.opts.extraHeaders) {
       for (const [k, v] of Object.entries(this.opts.extraHeaders)) headers[k] = v;
     }

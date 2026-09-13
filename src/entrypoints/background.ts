@@ -104,7 +104,7 @@ async function activateJot(invocation: InvocationMethod): Promise<void> {
     if (cfg.provider === "jot-api") isReady = !!wurkUser;
     else {
       const lower = (cfg.baseUrl ?? "").toLowerCase();
-      if (lower.includes("localhost") || lower.includes("127.0.0.1")) isReady = true;
+      if (lower.includes("localhost") || lower.includes("127.0.0.1") || lower.includes("::1")) isReady = true;
       else isReady = !!(await getApiKey(cfg.provider)).trim();
     }
     if (!isReady) {

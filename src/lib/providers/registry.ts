@@ -1,4 +1,5 @@
 import type { CustomProviderMeta } from "../types";
+import { isLoopbackUrl } from "../net";
 import { AnthropicProvider } from "./anthropic";
 import { JotApiProvider, OpenAICompatibleProvider } from "./openai";
 import type { ProviderAdapter } from "./types";
@@ -46,6 +47,15 @@ export const GROK_ADAPTER = new OpenAICompatibleProvider(
   "https://console.x.ai",
 );
 
+/** Local models via Ollama (keyless; `ollama serve` + `ollama pull <model>`). */
+export const OLLAMA_ADAPTER = new OpenAICompatibleProvider(
+  "ollama",
+  "Ollama",
+  "http://localhost:11434/v1",
+  "qwen2.5",
+  false,
+);
+
 /** Curated model picks shown as "Recommended" chips in settings UIs.
  *  Keyed by adapter id; unknown/custom providers get no recommendations. */
 export const RECOMMENDED_MODELS: Record<string, string[]> = {
@@ -55,10 +65,21 @@ export const RECOMMENDED_MODELS: Record<string, string[]> = {
   anthropic: ["claude-haiku-4-5"],
   gemini: ["gemini-3.5-flash-lite"],
   grok: ["grok-4.3"],
+  ollama: ["qwen2.5"],
 };
 
 export function getRecommendedModels(id: string): string[] {
   return RECOMMENDED_MODELS[id] ?? [];
+}
+
+/**
+ * True for local model servers: the Ollama builtin or any loopback base URL
+ * (covers LM Studio and loopback customs). Local providers need no API key
+ * and keep requests on the user's machine.
+ */
+export function isLocalProvider(provider: string, baseUrl: string): boolean {
+  if (provider === "ollama") return true;
+  return isLoopbackUrl(baseUrl);
 }
 
 export const JOT_API_ADAPTER = new JotApiProvider();
@@ -70,6 +91,7 @@ const BUILTINS: ProviderAdapter[] = [
   ANTHROPIC_ADAPTER,
   GEMINI_ADAPTER,
   GROK_ADAPTER,
+  OLLAMA_ADAPTER,
 ];
 
 /** Selectable base-URL presets for the OpenAI adapter (all OpenAI-compatible).

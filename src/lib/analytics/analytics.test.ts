@@ -132,6 +132,10 @@ describe("provider/model/step params", () => {
       provider: "openai",
       model: "gpt-4o-mini",
     });
+    expect(sanitizeParams({ provider: "ollama", model: "qwen2.5" })).toEqual({
+      provider: "ollama",
+      model: "qwen2.5",
+    });
     const long = sanitizeParams({ provider: "openai", model: "x".repeat(500) });
     expect(long.model).toHaveLength(128);
   });
@@ -186,6 +190,20 @@ describe("resolveProviderMeta", () => {
     await expect(resolveProviderMeta()).resolves.toEqual({
       provider: "custom",
       model: "",
+    });
+  });
+
+  it("attributes the ollama builtin with its model", async () => {
+    const { saveBackendConfig } = await import("../storage");
+    const { resolveProviderMeta } = await import("./provider");
+    await saveBackendConfig({
+      provider: "ollama",
+      baseUrl: "http://localhost:11434/v1",
+      model: "qwen2.5",
+    });
+    await expect(resolveProviderMeta()).resolves.toEqual({
+      provider: "ollama",
+      model: "qwen2.5",
     });
   });
 });

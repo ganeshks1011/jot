@@ -30,6 +30,7 @@ import {
   getAllAdapters,
   getRecommendedModels,
   isBuiltin,
+  isLocalProvider,
   OPENAI_ENDPOINT_PRESETS,
   ProviderError,
 } from "@/lib/providers";
@@ -565,6 +566,14 @@ export default function App() {
                                 </p>
                               </div>
                             )}
+                            {isLocalProvider(provider, baseUrl) && (
+                              <p className="mt-1 text-[11px] text-muted">
+                                Local model, no API key needed — requests stay on this machine. Run{" "}
+                                <code>ollama serve</code>, pull a model (<code>ollama pull qwen2.5</code>), then Load
+                                models. If the browser blocks the connection, start Ollama with{" "}
+                                <code>OLLAMA_ORIGINS=chrome-extension://*</code>.
+                              </p>
+                            )}
                           </div>
 
                           <div className="flex items-end gap-2">
@@ -634,7 +643,7 @@ export default function App() {
                                 type={showKey ? "text" : "password"}
                                 value={apiKey}
                                 onChange={(e) => setApiKey(e.target.value)}
-                                placeholder="sk-..."
+                                placeholder={isLocalProvider(provider, baseUrl) ? "Not needed for local models" : "sk-..."}
                                 fullWidth
                                 variant="secondary"
                                 className="pr-11"

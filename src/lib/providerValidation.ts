@@ -5,7 +5,7 @@ export function validateApiKey(provider: ProviderId, key: string, baseUrl?: stri
   const trimmed = key.trim();
   if (provider === "jot-api") return null;
   const lowerBase = (baseUrl ?? "").toLowerCase();
-  if (lowerBase.includes("localhost") || lowerBase.includes("127.0.0.1")) return null;
+  if (lowerBase.includes("localhost") || lowerBase.includes("127.0.0.1") || lowerBase.includes("::1")) return null;
   if (!trimmed) {
     const label = getAdapter(provider)?.label ?? provider;
     return `Enter your ${label} API key`;

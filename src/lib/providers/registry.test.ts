@@ -6,6 +6,8 @@ import {
   getAllAdapters,
   getRecommendedModels,
   GROK_ADAPTER,
+  isLocalProvider,
+  OLLAMA_ADAPTER,
   OPENAI_ENDPOINT_PRESETS,
 } from "./registry";
 
@@ -46,6 +48,14 @@ describe("recommended models", () => {
     expect(getRecommendedModels("grok")).toEqual(["grok-4.3"]);
   });
 
+  it("registers Ollama as a keyless local builtin", () => {
+    expect(getAdapter("ollama")).toBe(OLLAMA_ADAPTER);
+    expect(OLLAMA_ADAPTER.defaultBaseUrl).toBe("http://localhost:11434/v1");
+    expect(OLLAMA_ADAPTER.defaultModel).toBe("qwen2.5");
+    expect(OLLAMA_ADAPTER.apiKeyUrl).toBeUndefined();
+    expect(getRecommendedModels("ollama")).toEqual(["qwen2.5"]);
+  });
+
   it("returns an empty list for unknown and custom providers", () => {
     expect(getRecommendedModels("some-custom")).toEqual([]);
   });
@@ -57,6 +67,21 @@ describe("recommended models", () => {
   it("no longer retires Gemini 2.5 models", () => {
     expect(isRetiredModel("gemini-2.5-flash-lite")).toBe(false);
     expect(isRetiredModel("gemini-2.5-flash")).toBe(false);
+  });
+});
+
+describe("isLocalProvider", () => {
+  it("treats the ollama builtin and loopback URLs as local", () => {
+    expect(isLocalProvider("ollama", "http://localhost:11434/v1")).toBe(true);
+    expect(isLocalProvider("openai", "http://localhost:11434/v1")).toBe(true);
+    expect(isLocalProvider("custom", "http://127.0.0.1:1234/v1")).toBe(true);
+    expect(isLocalProvider("custom", "http://[::1]:11434/v1")).toBe(true);
+  });
+
+  it("treats remote endpoints as non-local", () => {
+    expect(isLocalProvider("openai", "https://api.openai.com/v1")).toBe(false);
+    expect(isLocalProvider("custom", "http://192.168.1.10:11434/v1")).toBe(false);
+    expect(isLocalProvider("custom", "not a url")).toBe(false);
   });
 });
 

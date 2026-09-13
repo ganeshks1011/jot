@@ -27,7 +27,7 @@ export const ANALYTICS_EVENTS = [
 export type AnalyticsEventName = (typeof ANALYTICS_EVENTS)[number];
 
 /** Known provider ids; custom slugs collapse to "custom" (user input). */
-export type ProviderLabel = "jot-api" | "opencode" | "openai" | "anthropic" | "gemini" | "grok" | "custom" | "unknown";
+export type ProviderLabel = "jot-api" | "opencode" | "openai" | "anthropic" | "gemini" | "grok" | "ollama" | "custom" | "unknown";
 
 /** Onboarding funnel steps (0-4): welcome, provider, personalization, shortcut, done. */
 export type OnboardingStepName = "welcome" | "provider" | "personalization" | "shortcut" | "done";

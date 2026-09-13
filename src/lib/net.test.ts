@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isLoopbackHostname, isRelayUrlAllowed } from "./net";
+import { isLoopbackHostname, isLoopbackUrl, isRelayUrlAllowed } from "./net";
 
 describe("isRelayUrlAllowed", () => {
   it("allows https anywhere", () => {
@@ -34,5 +34,21 @@ describe("isLoopbackHostname", () => {
     expect(isLoopbackHostname("[::1]")).toBe(true);
     expect(isLoopbackHostname("localhost.example")).toBe(false);
     expect(isLoopbackHostname("example.com")).toBe(false);
+  });
+});
+
+describe("isLoopbackUrl", () => {
+  it("matches loopback URLs in any loopback spelling", () => {
+    expect(isLoopbackUrl("http://localhost:11434/v1")).toBe(true);
+    expect(isLoopbackUrl("http://127.0.0.1:1234/v1")).toBe(true);
+    expect(isLoopbackUrl("http://[::1]:11434/v1")).toBe(true);
+    expect(isLoopbackUrl("https://localhost:11434/v1")).toBe(true);
+  });
+
+  it("rejects remote and unparseable URLs", () => {
+    expect(isLoopbackUrl("https://api.openai.com/v1")).toBe(false);
+    expect(isLoopbackUrl("http://192.168.1.10:11434/v1")).toBe(false);
+    expect(isLoopbackUrl("not-a-url")).toBe(false);
+    expect(isLoopbackUrl("")).toBe(false);
   });
 });

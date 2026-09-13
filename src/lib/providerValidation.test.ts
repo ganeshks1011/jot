@@ -11,6 +11,8 @@ describe("validateApiKey", () => {
   });
   it("allows localhost without key", () => {
     expect(validateApiKey("openai", "", "http://localhost:11434/v1")).toBeNull();
+    expect(validateApiKey("openai", "", "http://127.0.0.1:11434/v1")).toBeNull();
+    expect(validateApiKey("openai", "", "http://[::1]:11434/v1")).toBeNull();
   });
   it("checks gemini", () => {
     expect(validateApiKey("gemini", "")).toMatch(/Gemini/);

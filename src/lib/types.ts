@@ -1,4 +1,4 @@
-export type BuiltinProviderId = "jot-api" | "opencode" | "openai" | "anthropic" | "gemini" | "grok";
+export type BuiltinProviderId = "jot-api" | "opencode" | "openai" | "anthropic" | "gemini" | "grok" | "ollama";
 
 export type ProviderId = BuiltinProviderId | (string & {});
 

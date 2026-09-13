@@ -31,6 +31,15 @@ export function isLoopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
 }
 
+/** Loopback URLs (Ollama, LM Studio). Unparseable input is never loopback. */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    return isLoopbackHostname(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Relay URL allowlist (enforced by the background service worker for both
  * the request/response and streaming relays). Https anywhere: custom

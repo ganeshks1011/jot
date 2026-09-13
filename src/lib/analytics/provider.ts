@@ -1,7 +1,7 @@
 import { getBackendConfig } from "../storage";
 import type { ProviderLabel } from "./types";
 
-const KNOWN_PROVIDERS: ProviderLabel[] = ["jot-api", "opencode", "openai", "anthropic", "gemini", "grok"];
+const KNOWN_PROVIDERS: ProviderLabel[] = ["jot-api", "opencode", "openai", "anthropic", "gemini", "grok", "ollama"];
 
 export interface ProviderMeta {
   provider: ProviderLabel;
