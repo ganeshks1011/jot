@@ -481,13 +481,17 @@ function createHost(): HostController {
     }
   }
 
-  // Native selection highlight for the captured text: restore the real
-  // selection on open and tint it with a scoped ::selection rule. No
-  // underline (::selection ignores text-decoration) and unfocused
-  // selections may paint paler while the panel holds focus — accepted
-  // tradeoff for zero restyling of page elements. Tag + class removed on
-  // close so the page is left untouched.
+  // Captured-text highlight, split by surface. Contenteditables keep the
+  // native selection tinted by a scoped ::selection rule (zero restyling of
+  // page elements; no underline since ::selection ignores text-decoration).
+  // Textarea/input selections wash out when blurred, so those highlight via
+  // their own border color instead — saved and restored on close. Tag,
+  // class, and border color are all removed on close so the page is left
+  // untouched.
   const SELECTION_STYLE_ID = "jot-selection";
+  const FIELD_HIGHLIGHT_BORDER = "#c4b5fd";
+  let highlightPrevBorderColor = "";
+  let highlightBorderTarget: HTMLElement | null = null;
 
   function ensureSelectionStyle(): void {
     try {
@@ -526,6 +530,21 @@ function createHost(): HostController {
     } catch {
       // Never break open.
     }
+    // Text fields mark the captured selection with their border color,
+    // which paints at full strength with or without focus.
+    try {
+      const target = highlightBox ?? activeField;
+      if (
+        target?.isConnected === true &&
+        (target instanceof HTMLTextAreaElement || target instanceof HTMLInputElement)
+      ) {
+        highlightBorderTarget = target;
+        highlightPrevBorderColor = target.style.borderColor;
+        target.style.borderColor = FIELD_HIGHLIGHT_BORDER;
+      }
+    } catch {
+      highlightBorderTarget = null;
+    }
   }
 
   function clearSelectionHighlight(): void {
@@ -535,6 +554,14 @@ function createHost(): HostController {
     } catch {
       // Never break teardown.
     }
+    try {
+      if (highlightBorderTarget) {
+        highlightBorderTarget.style.borderColor = highlightPrevBorderColor;
+      }
+    } catch {
+      // Never break teardown.
+    }
+    highlightBorderTarget = null;
   }
 
   function handleReposition(): void {
