@@ -12,6 +12,9 @@
    by the theme toggle, not the OS preference. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Scan the shared jot-ui package for utilities only it references. */
+@source "../../../../../packages/jot-ui/src";
+
 @layer base {
   :root {
     --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;

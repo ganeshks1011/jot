@@ -20,10 +20,16 @@
 @import "@heroui/styles/components/tooltip.css" layer(components);
 @import "@heroui/styles/utilities";
 @import "@heroui/styles/variants";
+/* Shared card structure (layout lives here, not in utilities — see file). */
+@import "@wurkflo/jot-ui/styles.css";
 
 /* Class-based dark mode: dark: utilities follow the .dark class managed
    by the theme toggle, not the OS preference. */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Scan the shared jot-ui package: the card markup moved there and its
+   utilities would otherwise go missing from this entrypoint's CSS. */
+@source "../../../../../packages/jot-ui/src";
 
 @layer base {
   :root {

@@ -20,8 +20,8 @@ import type {
 import type { LexicalTextNode } from "@wurkflo/shared";
 import type { MutableRefObject } from "react";
 import { browser } from "wxt/browser";
-import { editorTypeFor, resolveProviderMeta, siteLabelFor, track } from "@/lib/analytics";
 import type { AnalyticsErrorType, AnalyticsEventName, AnalyticsParams, EditorType } from "@/lib/analytics";
+import { editorTypeFor, resolveProviderMeta, siteLabelFor, track } from "@/lib/analytics";
 import { rewriteLexicalNodes, rewriteText } from "@/lib/api";
 import { WURKFLO_ORIGIN } from "@/lib/config";
 import { htmlToPlainText, sanitizeRichHtml } from "@/lib/richText";
@@ -75,10 +75,16 @@ export function createChromeAdapter({ siteRef, editorRef, verifiedWriteRef }: Ch
     ): Promise<RewriteResult> {
       // The system instruction is resolved inside api.ts from the
       // personalization hierarchy; req.systemPrompt is intentionally unused.
-      const output = await rewriteText(req.text, req.site ?? siteRef.current, req.followUp, {
-        signal: handlers.signal,
-        onChunk: handlers.onToken,
-      }, req.html ? { html: req.html } : undefined);
+      const output = await rewriteText(
+        req.text,
+        req.site ?? siteRef.current,
+        req.followUp,
+        {
+          signal: handlers.signal,
+          onChunk: handlers.onToken,
+        },
+        req.html ? { html: req.html } : undefined,
+      );
       return { output };
     },
 
@@ -128,7 +134,9 @@ export function createChromeAdapter({ siteRef, editorRef, verifiedWriteRef }: Ch
               }),
             ),
           ];
-          return () => unsubs.forEach((unsub) => unsub());
+          return () => {
+            unsubs.forEach((unsub) => unsub());
+          };
         },
       };
     },
@@ -142,7 +150,7 @@ export function createChromeAdapter({ siteRef, editorRef, verifiedWriteRef }: Ch
     openUpgrade(info: RewriteUpgrade): void {
       const uri = info.redirectUri?.trim();
       // Validate relative redirectUri. Never trust arbitrary URLs.
-      const safeUri = uri && uri.startsWith("/") ? uri : "/jot/upgrade";
+      const safeUri = uri?.startsWith("/") ? uri : "/jot/upgrade";
       void browser.tabs.create({ url: `${WURKFLO_ORIGIN.replace(/\/+$/, "")}${safeUri}` });
     },
 

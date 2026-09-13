@@ -6,7 +6,7 @@
  * to @wurkflo/jot-ui with the Chrome host adapter.
  */
 
-import { JotAssistant, type JotAppearance, type JotSizeReporter, type JotSource } from "@wurkflo/jot-ui";
+import { type JotAppearance, JotAssistant, type JotSizeReporter, type JotSource } from "@wurkflo/jot-ui";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { EditorType } from "@/lib/analytics";
 import { MIN_CONTENT_HEIGHT } from "@/lib/overlayGeometry";
@@ -32,10 +32,7 @@ export default function App() {
     maxPanelHeightRef.current = maxPanelHeight;
   }, [maxPanelHeight]);
 
-  const adapter = useMemo(
-    () => createChromeAdapter({ siteRef, editorRef, verifiedWriteRef }),
-    [],
-  );
+  const adapter = useMemo(() => createChromeAdapter({ siteRef, editorRef, verifiedWriteRef }), []);
 
   // Initialize from the content script's captured selection. A per-init
   // counter forces re-evaluation even for identical text+site (mode
