@@ -804,9 +804,9 @@ export default function App() {
         ) : failedText ? (
           <div className="rounded-lg border border-warning/30 bg-warning-soft/40 p-3 text-xs" role="alert">
             <p className="mb-1 font-medium text-foreground">
-              Couldn&apos;t update the editor. Copy the rewrite instead.
+              Couldn&apos;t update the editor. Copy the rewrite, then paste it into the editor (⌘V / Ctrl+V).
             </p>
-            <p className="mb-2 line-clamp-3 break-words whitespace-pre-wrap text-muted">{failedText}</p>
+            <p className="jot-failed-text mb-2 break-words whitespace-pre-wrap text-muted">{failedText}</p>
             {failedMetrics && <p className="mb-2 text-[11px] text-muted">{failedMetrics}</p>}
             <div className="flex items-center gap-2" data-jot-error-actions>
               <Button size="sm" variant="primary" onPress={() => void copyFailedText()}>

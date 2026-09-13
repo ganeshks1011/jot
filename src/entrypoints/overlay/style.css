@@ -154,6 +154,13 @@ body {
   transition: height 180ms ease;
 }
 
+/* Failed-write text: full rewrite stays visible and selectable, scrolling
+   inside the same host-provided budget as the result box. */
+.jot-failed-text {
+  max-height: var(--jot-content-max, 38vh);
+  overflow-y: auto;
+}
+
 /* Restored list structure inside the HTML preview. Tailwind preflight
    strips bullets/numbers and indentation; these scoped rules bring back
    standard markers without leaking outside #jot-content. */

@@ -31,9 +31,11 @@ export default defineConfig({
      * activeTab grants temporary access to the active tab on invocation
      * (keyboard shortcut or action click), and `scripting` injects the
      * jot-host controller via chrome.scripting.executeScript. Closing the
-     * overlay tears the controller down completely.
+     * overlay tears the controller down completely. `clipboardRead` lets the
+     * host-side paste tier read overlay-written flavors; `clipboardWrite`
+     * backs the overlay copy buttons (warning-free).
      */
-    permissions: ["storage", "activeTab", "scripting", "contextMenus"],
+    permissions: ["storage", "activeTab", "scripting", "contextMenus", "clipboardRead", "clipboardWrite"],
     commands: {
       "toggle-jot": {
         suggested_key: {
