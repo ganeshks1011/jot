@@ -239,12 +239,45 @@ function traceDegrade(info: {
   reason?: string;
   preOpLen?: number;
   postOpLen?: number;
+  shape?: { lcpLen: number; lcsLen: number; startsWith: boolean; endsWith: boolean };
 }): void {
   try {
     console.log("[jot] degrade", info);
   } catch {
     // Logging must never break insertion.
   }
+}
+
+/**
+ * TEMPORARY content-shape descriptor for the tag-stripping investigation.
+ * Characterizes how a verify-failed read-back differs from expectation
+ * using lengths and booleans only — never content. lcpLen/lcsLen locate
+ * the deformation (trailing strip: lcp≈actual length; leading strip:
+ * suffix≈actual length; interior substitution: both large but neither
+ * full). Unit-indexed; astral-plane text may skew counts by a unit or
+ * two, which does not affect classification. Exported for unit tests.
+ */
+export interface ContentShape {
+  lcpLen: number;
+  lcsLen: number;
+  startsWith: boolean;
+  endsWith: boolean;
+}
+
+export function describeShape(actual: string, expected: string): ContentShape {
+  const maxPrefix = Math.min(actual.length, expected.length);
+  let lcpLen = 0;
+  while (lcpLen < maxPrefix && actual[lcpLen] === expected[lcpLen]) lcpLen++;
+  let lcsLen = 0;
+  while (lcsLen < maxPrefix - lcpLen && actual[actual.length - 1 - lcsLen] === expected[expected.length - 1 - lcsLen]) {
+    lcsLen++;
+  }
+  return {
+    lcpLen,
+    lcsLen,
+    startsWith: expected.startsWith(actual) || actual.startsWith(expected),
+    endsWith: expected.endsWith(actual) || actual.endsWith(expected),
+  };
 }
 
 /** Outcome of a write op: whether it ran, what execCommand reported, and why it skipped. */
@@ -471,6 +504,7 @@ async function runHtmlInsert(
       to: "html-paste",
       reason: "verify-false",
       postOpLen: actual.length,
+      shape: describeShape(actual, plainExpected),
     });
   }
   // Attempt 1: synthetic paste. On dispatch-but-no-verify, fall through to
@@ -487,6 +521,7 @@ async function runHtmlInsert(
       to: "html-exec",
       reason: "verify-false",
       postOpLen: actual.length,
+      shape: describeShape(actual, plainExpected),
     });
   } else if (!pasted.completed) {
     traceDegrade({
@@ -751,6 +786,7 @@ export async function replaceRichText(
           reason: "verify-false",
           preOpLen,
           postOpLen: actual.length,
+          shape: describeShape(actual, plainExpected),
         });
       }
     }
@@ -800,6 +836,7 @@ export async function replaceRichText(
         reason: "verify-false",
         preOpLen,
         postOpLen: actual.length,
+        shape: describeShape(actual, expected),
       });
     }
     // Multiline select-all heals partial writes from the attempt above.
@@ -849,6 +886,7 @@ export async function replaceRichText(
         reason: "verify-false",
         preOpLen,
         postOpLen: actual.length,
+        shape: describeShape(actual, expected),
       });
     }
   }

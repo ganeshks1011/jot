@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { htmlToPlainText } from "../richText";
 import {
+  describeShape,
   FRAMEWORK_MARKERS,
   liveRichTextDeps,
   type RichTextDeps,
@@ -763,6 +764,30 @@ describe("replaceRichText", () => {
     expect(seen.map((t) => t.op)).not.toContain("html-clipboard-paste");
     const htmlTrace = seen.find((t) => t.op === "html-exec");
     expect(htmlTrace?.detail).toBe("clipboard-unverified");
+  });
+});
+
+describe("describeShape", () => {
+  it("reports a trailing strip (prefix intact, suffix short)", () => {
+    const shape = describeShape("abcdefghij", "abcdefghijklm");
+    expect(shape).toEqual({ lcpLen: 10, lcsLen: 0, startsWith: true, endsWith: false });
+  });
+
+  it("reports a leading strip (suffix intact, prefix short)", () => {
+    const shape = describeShape("fghij", "abcdefghij");
+    expect(shape).toEqual({ lcpLen: 0, lcsLen: 5, startsWith: false, endsWith: true });
+  });
+
+  it("reports an interior substitution (both ends long, neither full)", () => {
+    const shape = describeShape("abXXefghij", "abcdefghij");
+    expect(shape.lcpLen).toBe(2);
+    expect(shape.lcsLen).toBe(6);
+    expect(shape.startsWith).toBe(false);
+    expect(shape.endsWith).toBe(false);
+  });
+
+  it("reports identical strings as full overlap", () => {
+    expect(describeShape("abc", "abc")).toEqual({ lcpLen: 3, lcsLen: 0, startsWith: true, endsWith: true });
   });
 });
 
