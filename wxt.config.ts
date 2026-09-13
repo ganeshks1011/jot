@@ -23,7 +23,7 @@ export default defineConfig({
       : {}),
   }),
   manifest: {
-    name: "Jot - AI rewriter",
+    name: "Jot - AI Writing & Rewriting",
     description: "Write it rough. Jot it right. Turn rough thoughts into replies, comments, posts, and announcements.",
     /**
      * No host permissions, no <all_urls>, no URL-matched content scripts.
