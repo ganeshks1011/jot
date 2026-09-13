@@ -481,43 +481,60 @@ function createHost(): HostController {
     }
   }
 
-  // Professional highlight marking the bordered composer box: a thin
-  // outline in the composer's own text color plus a soft neutral shadow
-  // (white on dark pages, black on light pages). Previous inline styles are
-  // restored on close so the page is left untouched. No animation, so there
-  // is nothing to gate behind prefers-reduced-motion.
-  let glowTarget: HTMLElement | null = null;
-  let glowPrevBoxShadow = "";
-  let glowPrevOutline = "";
+  // Native selection highlight for the captured text: restore the real
+  // selection on open and tint it with a scoped ::selection rule. No
+  // underline (::selection ignores text-decoration) and unfocused
+  // selections may paint paler while the panel holds focus — accepted
+  // tradeoff for zero restyling of page elements. Tag + class removed on
+  // close so the page is left untouched.
+  const SELECTION_STYLE_ID = "jot-selection";
 
-  function applyComposerGlow(): void {
-    clearComposerGlow();
-    const target = highlightBox ?? activeField;
-    if (target?.isConnected !== true) return;
+  function ensureSelectionStyle(): void {
     try {
-      glowTarget = target;
-      glowPrevBoxShadow = target.style.boxShadow;
-      glowPrevOutline = target.style.outline;
-      const colors = sampleComposerColors();
-      target.style.outline = `2px solid ${colors.fg ?? "currentColor"}`;
-      target.style.boxShadow =
-        colors.pageDark === true
-          ? "0 0 0 4px rgb(255 255 255 / 0.12), 0 4px 18px rgb(255 255 255 / 0.1)"
-          : "0 0 0 4px rgb(0 0 0 / 0.08), 0 4px 18px rgb(0 0 0 / 0.12)";
+      if (document.getElementById(SELECTION_STYLE_ID)) return;
+      const tag = document.createElement("style");
+      tag.id = SELECTION_STYLE_ID;
+      tag.textContent =
+        ".jot-sel::selection{background:rgb(196 181 253 / 0.55);color:inherit;}" +
+        ".jot-sel ::selection{background:rgb(196 181 253 / 0.55);color:inherit;}";
+      (document.head ?? document.documentElement).appendChild(tag);
     } catch {
-      glowTarget = null;
+      // Strict-CSP pages refuse the tag; the native selection still shows.
     }
   }
 
-  function clearComposerGlow(): void {
-    if (!glowTarget) return;
+  function applySelectionHighlight(): void {
+    clearSelectionHighlight();
     try {
-      glowTarget.style.boxShadow = glowPrevBoxShadow;
-      glowTarget.style.outline = glowPrevOutline;
+      ensureSelectionStyle();
+    } catch {
+      // Cosmetic only; continue to the selection restore below.
+    }
+    try {
+      const sel = window.getSelection();
+      if (capturedRange && sel) {
+        sel.removeAllRanges();
+        sel.addRange(capturedRange.cloneRange());
+      } else if (activeField instanceof HTMLTextAreaElement || activeField instanceof HTMLInputElement) {
+        activeField.setSelectionRange(capturedStart, capturedEnd);
+      }
+    } catch {
+      // A detached range fails safe; the tint scope below is harmless.
+    }
+    try {
+      (highlightBox ?? activeField)?.classList.add("jot-sel");
+    } catch {
+      // Never break open.
+    }
+  }
+
+  function clearSelectionHighlight(): void {
+    try {
+      document.getElementById(SELECTION_STYLE_ID)?.remove();
+      (highlightBox ?? activeField)?.classList.remove("jot-sel");
     } catch {
       // Never break teardown.
     }
-    glowTarget = null;
   }
 
   function handleReposition(): void {
@@ -550,7 +567,7 @@ function createHost(): HostController {
     lastConnectorX = null;
     attachReposition();
     observeField();
-    applyComposerGlow();
+    applySelectionHighlight();
     focusPanel();
 
     // Pre-prompt decision from the captured input: long inputs open
@@ -596,7 +613,7 @@ function createHost(): HostController {
       pendingShow = null;
     }
     disconnectFieldObserver();
-    clearComposerGlow();
+    clearSelectionHighlight();
     // Restore the user's cursor focus to the field they launched from...
     activeField?.focus();
     // ...then tear everything down so nothing stays behind in the page.
@@ -983,7 +1000,7 @@ function createHost(): HostController {
     iframe?.remove();
     iframe = null;
     disconnectFieldObserver();
-    clearComposerGlow();
+    clearSelectionHighlight();
     activeField = null;
     highlightBox = null;
     capturedRange = null;
