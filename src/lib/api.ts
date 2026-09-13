@@ -4,6 +4,7 @@ import { relayStream } from "./net";
 import { buildApiPrompts, buildDirectPrompts, buildPreviewPrompts } from "./personalization";
 import { getAdapter, ProviderError } from "./providers";
 import { type Replacement, redact, redactAll, restorePlaceholders } from "./redaction";
+import { buildResponseKey, cachedResponseFor, storeResponse } from "./responseCache";
 import { sanitizeRichHtml } from "./richText";
 import { getApiKey, getBackendConfig, getRedactionEnabled, setWurkfloRemaining } from "./storage";
 import { isTransientRelayError, isTransientTokenError } from "./transientErrors";
@@ -437,11 +438,30 @@ async function streamWurkfloRewrite(
     preservePlaceholders,
     sourceHtml,
   });
+  // Cross-open response cache: identical text + resolved system prompt
+  // reuses the last output without a request (no quota consumed). Keyed
+  // node lists ride in the key so Lexical flows share the mechanism.
+  const isHtml = !!sourceHtml?.trim();
+  const keyed = nodes && nodes.length > 0 ? nodes : null;
+  const responseKey = await buildResponseKey({
+    provider: "jot-api",
+    model: (await getBackendConfig()).model ?? "",
+    systemPrompt,
+    source,
+    followUp,
+    html: sourceHtml,
+    nodes: keyed ? JSON.stringify(keyed.map((n) => [n.id, n.text])) : undefined,
+  });
+  const cachedHit = await cachedResponseFor(responseKey);
+  if (cachedHit != null) {
+    // Surface through the streaming preview like a live response (keyed
+    // callers pass no onChunk, so nothing renders mid-flight there).
+    if (!keyed) handlers?.onChunk?.(cachedHit);
+    return cachedHit;
+  }
   // Flag HTML inputs so the backend appends its preservation rule; plain
   // inputs omit the field entirely (previous-frontend payload shape).
   // Keyed node lists ride along for the backend's keyed rewrite rule.
-  const isHtml = !!sourceHtml?.trim();
-  const keyed = nodes && nodes.length > 0 ? nodes : null;
   let payload = buildWurkfloPayload(systemPrompt, input, isHtml, keyed ?? undefined);
 
   // The SSE stream is relayed through the background service worker (no host
@@ -644,6 +664,8 @@ async function streamWurkfloRewrite(
   if (!result.trim()) {
     throw new ProviderError("empty", "Empty model response");
   }
+  // Cache only clean successes: failures and empties must refetch.
+  await storeResponse(responseKey, result);
   return result;
 }
 

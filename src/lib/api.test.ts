@@ -52,7 +52,8 @@ vi.mock("./providers", async (importOriginal) => {
 });
 
 import { browser } from "wxt/browser";
-import { listModels, ProviderError, parseKeyedRewrites, rewriteLexicalNodes } from "./api";
+import { listModels, ProviderError, parseKeyedRewrites, rewriteLexicalNodes, rewriteText } from "./api";
+import { clearResponseCache } from "./responseCache";
 import { saveApiKey, saveBackendConfig } from "./storage";
 
 const STORED_URL = "https://stored.example.com/v1";
@@ -185,5 +186,54 @@ describe("rewriteLexicalNodes", () => {
   it("throws empty when the model response has no usable map", async () => {
     pendingFrames = ['data: {"content":"hello plain text"}\n\n', "data: [DONE]\n\n"];
     await expect(rewriteLexicalNodes(nodes)).rejects.toMatchObject({ kind: "empty" });
+  });
+
+  it("serves identical keyed requests from cache without a second relay", async () => {
+    await clearResponseCache();
+    pendingFrames = [
+      'data: {"content":"{\\"rewrites\\":{\\"0/0\\":\\"Hi\\","}\n\n',
+      'data: {"content":"\\"1/0/0\\":\\"uno\\"}}"}\n\n',
+      "data: [DONE]\n\n",
+    ];
+    const first = await rewriteLexicalNodes(nodes, { site: "reddit.com" });
+    expect(first).toEqual({ "0/0": "Hi", "1/0/0": "uno" });
+    expect(relayCalls).toHaveLength(1);
+    pendingFrames = [];
+    const second = await rewriteLexicalNodes(nodes, { site: "reddit.com" });
+    expect(second).toEqual(first);
+    expect(relayCalls).toHaveLength(1);
+  });
+});
+
+describe("rewriteText response cache", () => {
+  beforeEach(async () => {
+    relayCalls.length = 0;
+    pendingFrames = [];
+    await clearResponseCache();
+    await saveBackendConfig({ provider: "jot-api", baseUrl: "", model: "" });
+    await browser.storage.local.set({ "jot:wurkfloUser": { uid: "u", email: null } });
+  });
+
+  it("streams once, then serves the same rewrite from cache", async () => {
+    pendingFrames = ['data: {"content":"Hello "}\n\n', 'data: {"content":"there"}\n\n', "data: [DONE]\n\n"];
+    const firstChunks: string[] = [];
+    const first = await rewriteText("hello there", "reddit.com", undefined, {
+      onChunk: (delta) => {
+        firstChunks.push(delta);
+      },
+    });
+    expect(first).toBe("Hello there");
+    expect(relayCalls).toHaveLength(1);
+    expect(firstChunks.join("")).toBe("Hello there");
+    pendingFrames = [];
+    const secondChunks: string[] = [];
+    const second = await rewriteText("hello there", "reddit.com", undefined, {
+      onChunk: (delta) => {
+        secondChunks.push(delta);
+      },
+    });
+    expect(second).toBe("Hello there");
+    expect(relayCalls).toHaveLength(1);
+    expect(secondChunks).toEqual(["Hello there"]);
   });
 });
