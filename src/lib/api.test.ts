@@ -51,10 +51,25 @@ vi.mock("./providers", async (importOriginal) => {
   };
 });
 
-import { listModels } from "./api";
+import { browser } from "wxt/browser";
+import { listModels, ProviderError, parseKeyedRewrites, rewriteLexicalNodes } from "./api";
 import { saveApiKey, saveBackendConfig } from "./storage";
 
 const STORED_URL = "https://stored.example.com/v1";
+
+const relayCalls: Array<{ body: unknown }> = [];
+let pendingFrames: string[] = [];
+
+vi.mock("./net", () => ({
+  relayStream: async (req: { body?: string }, handlers: { onChunk: (raw: string) => void }) => {
+    relayCalls.push({ body: req.body ? JSON.parse(req.body) : null });
+    for (const frame of pendingFrames.splice(0)) handlers.onChunk(frame);
+  },
+}));
+
+vi.mock("./auth", () => ({
+  getWurkfloToken: async () => "test-token",
+}));
 
 beforeEach(async () => {
   captured.length = 0;
@@ -94,5 +109,81 @@ describe("listModels endpoint override", () => {
   it("falls back to the saved URL when the override is blank", async () => {
     await listModels({ provider: "openai", baseUrl: "   ", model: "m", apiKey: "k" });
     expect(captured[0]?.config).toMatchObject({ baseUrl: STORED_URL });
+  });
+});
+
+describe("parseKeyedRewrites", () => {
+  const ids = ["0/0", "1/0/0"];
+
+  it("parses an exact map", () => {
+    expect(parseKeyedRewrites('{"rewrites":{"0/0":"Hi","1/0/0":"uno"}}', ids)).toEqual({
+      "0/0": "Hi",
+      "1/0/0": "uno",
+    });
+  });
+
+  it("slices the outermost object out of surrounding prose", () => {
+    const raw = 'Sure! {"rewrites":{"0/0":"Hi","1/0/0":"uno"}} done.';
+    expect(parseKeyedRewrites(raw, ids)).toEqual({ "0/0": "Hi", "1/0/0": "uno" });
+  });
+
+  it("ignores extra ids but requires every expected id", () => {
+    const raw = '{"rewrites":{"0/0":"Hi","1/0/0":"uno","9/9":"extra"}}';
+    expect(parseKeyedRewrites(raw, ids)).toEqual({ "0/0": "Hi", "1/0/0": "uno" });
+    expect(parseKeyedRewrites('{"rewrites":{"0/0":"Hi"}}', ids)).toBeNull();
+  });
+
+  it("rejects blank values and malformed payloads", () => {
+    expect(parseKeyedRewrites('{"rewrites":{"0/0":"  ","1/0/0":"uno"}}', ids)).toBeNull();
+    expect(parseKeyedRewrites("not json at all", ids)).toBeNull();
+    expect(parseKeyedRewrites('{"nope":{}}', ids)).toBeNull();
+    expect(parseKeyedRewrites("", ids)).toBeNull();
+  });
+});
+
+describe("rewriteLexicalNodes", () => {
+  const nodes = [
+    { id: "0/0", text: "Hello world" },
+    { id: "1/0/0", text: "one" },
+  ];
+
+  beforeEach(async () => {
+    relayCalls.length = 0;
+    pendingFrames = [];
+    await saveBackendConfig({ provider: "jot-api", baseUrl: "", model: "" });
+    await browser.storage.local.set({ "jot:wurkfloUser": { uid: "u", email: null } });
+  });
+
+  it("throws without hitting the network when nodes are empty", async () => {
+    await expect(rewriteLexicalNodes([])).rejects.toMatchObject({ kind: "empty" });
+    expect(relayCalls).toHaveLength(0);
+  });
+
+  it("throws for non-jot-api providers so callers fall back", async () => {
+    await saveBackendConfig({ provider: "openai", baseUrl: STORED_URL, model: "stored-model" });
+    const err = await rewriteLexicalNodes(nodes).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(relayCalls).toHaveLength(0);
+  });
+
+  it("sends nodes and returns the parsed map without streaming chunks", async () => {
+    pendingFrames = [
+      'data: {"content":"{\\"rewrites\\":{\\"0/0\\":\\"Hi\\","}\n\n',
+      'data: {"content":"\\"1/0/0\\":\\"uno\\"}}"}\n\n',
+      "data: [DONE]\n\n",
+    ];
+    const onChunk = vi.fn();
+    const map = await rewriteLexicalNodes(nodes, { site: "reddit.com", handlers: { onChunk } });
+    expect(map).toEqual({ "0/0": "Hi", "1/0/0": "uno" });
+    expect(onChunk).not.toHaveBeenCalled();
+    expect(relayCalls).toHaveLength(1);
+    expect(relayCalls[0]?.body).toMatchObject({ nodes });
+    const body = relayCalls[0]?.body as Record<string, unknown>;
+    expect(typeof body.systemPrompt).toBe("string");
+  });
+
+  it("throws empty when the model response has no usable map", async () => {
+    pendingFrames = ['data: {"content":"hello plain text"}\n\n', "data: [DONE]\n\n"];
+    await expect(rewriteLexicalNodes(nodes)).rejects.toMatchObject({ kind: "empty" });
   });
 });

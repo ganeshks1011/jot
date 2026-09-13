@@ -1,4 +1,4 @@
-import { normalizeRewriteOutput } from "@wurkflo/shared";
+import { type LexicalTextNode, normalizeRewriteOutput } from "@wurkflo/shared";
 import { WURKFLO_ORIGIN } from "./config";
 import { relayStream } from "./net";
 import { buildApiPrompts, buildDirectPrompts, buildPreviewPrompts } from "./personalization";
@@ -160,12 +160,19 @@ const MAX_CACHED_PROMPTS = 20;
  * input is a formatting-bearing fragment so the backend appends its
  * lowest-priority preservation rule; plain payloads stay byte-identical to
  * previous extension versions (older backends ignore the absent field,
- * current backends take the plain path).
+ * current backends take the plain path). `nodes` carries Lexical index-path
+ * entries for the keyed rewrite and implies its own backend rule.
  */
-function buildWurkfloPayload(systemPrompt: string, input: string, html?: boolean): Record<string, unknown> {
+function buildWurkfloPayload(
+  systemPrompt: string,
+  input: string,
+  html?: boolean,
+  nodes?: LexicalTextNode[],
+): Record<string, unknown> {
   const hash = promptHashCache.get(systemPrompt);
   const base = hash ? { systemPromptHash: hash, input } : { systemPrompt, input };
-  return html ? { ...base, html: true } : base;
+  const withHtml = html ? { ...base, html: true } : base;
+  return nodes && nodes.length > 0 ? { ...withHtml, nodes } : withHtml;
 }
 
 function rememberPromptHash(systemPrompt: string, hash: string): void {
@@ -396,6 +403,7 @@ async function streamWurkfloRewrite(
   handlers?: RewriteHandlers,
   preservePlaceholders?: boolean,
   sourceHtml?: string | null,
+  nodes?: LexicalTextNode[] | null,
 ): Promise<string> {
   // Dynamic import keeps the Firebase SDK out of bundles that never use it.
   const [{ getWurkfloToken }, { getWurkfloUser }] = await Promise.all([import("./auth"), import("./storage")]);
@@ -431,8 +439,10 @@ async function streamWurkfloRewrite(
   });
   // Flag HTML inputs so the backend appends its preservation rule; plain
   // inputs omit the field entirely (previous-frontend payload shape).
+  // Keyed node lists ride along for the backend's keyed rewrite rule.
   const isHtml = !!sourceHtml?.trim();
-  let payload = buildWurkfloPayload(systemPrompt, input, isHtml);
+  const keyed = nodes && nodes.length > 0 ? nodes : null;
+  let payload = buildWurkfloPayload(systemPrompt, input, isHtml, keyed ?? undefined);
 
   // The SSE stream is relayed through the background service worker (no host
   // permissions, so extension pages are CORS-bound). Chunks arrive as raw
@@ -469,7 +479,9 @@ async function streamWurkfloRewrite(
           const delta = normalizeRewriteOutput(parsed.content);
           if (delta) {
             result += delta;
-            handlers?.onChunk?.(delta);
+            // Keyed responses accumulate JSON, not display text: never
+            // forward fragments to the streaming preview.
+            if (!keyed) handlers?.onChunk?.(delta);
           }
         }
       } catch (err) {
@@ -537,7 +549,7 @@ async function streamWurkfloRewrite(
       if (e.status === 400 && attempt === 0 && !handlers?.signal?.aborted && isInvalidPromptHashError(e.body)) {
         // Stale cached hash. Drop it and retry once with the full prompt.
         dropPromptHash(systemPrompt);
-        payload = buildWurkfloPayload(systemPrompt, input, isHtml);
+        payload = buildWurkfloPayload(systemPrompt, input, isHtml, keyed ?? undefined);
         failure = null;
         continue;
       }
@@ -633,6 +645,100 @@ async function streamWurkfloRewrite(
     throw new ProviderError("empty", "Empty model response");
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Lexical keyed rewrite (structure-preserving, via the Wurkflo backend)
+// ---------------------------------------------------------------------------
+
+export interface LexicalRewriteOptions {
+  source?: string;
+  site?: string;
+  followUp?: string;
+  handlers?: RewriteHandlers;
+}
+
+/**
+ * Parse an accumulated keyed-rewrite response into an id->text map.
+ * Returns null when the payload is not usable: unparseable JSON, missing
+ * `rewrites` object, or any expected id absent or blank. Extra ids are
+ * ignored. Pure and unit-tested; the stream may wrap the JSON in stray
+ * prose, so the outermost object is sliced out first.
+ */
+export function parseKeyedRewrites(raw: string, expectedIds: string[]): Record<string, string> | null {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const rewrites = (parsed as Record<string, unknown>).rewrites;
+  if (!rewrites || typeof rewrites !== "object" || Array.isArray(rewrites)) return null;
+  const record = rewrites as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const id of expectedIds) {
+    const value = record[id];
+    if (typeof value !== "string" || !value.trim()) return null;
+    out[id] = value;
+  }
+  return out;
+}
+
+/**
+ * Rewrite Lexical text nodes by id through the Wurkflo backend and return
+ * the id->rewritten-text map. Only the jot-api provider supports the keyed
+ * contract; anything else throws so callers fall back to the string flow.
+ * Sensitive spans are redacted locally with shared numbering and restored
+ * per mapped value before returning.
+ */
+export async function rewriteLexicalNodes(
+  nodes: LexicalTextNode[],
+  opts?: LexicalRewriteOptions,
+): Promise<Record<string, string>> {
+  if (nodes.length === 0) throw new ProviderError("empty", "Nothing to rewrite");
+  const config = await getBackendConfig();
+  if (config.provider !== "jot-api") {
+    throw new ProviderError("network", "Keyed rewrite needs the Wurkflo backend");
+  }
+  const followUp = opts?.followUp?.trim() ? opts.followUp : undefined;
+  const texts = nodes.map((n) => n.text);
+  if (followUp) texts.push(followUp);
+  let sentNodes = nodes;
+  let sentFollowUp = followUp;
+  let replacements: Replacement[] = [];
+  if (await getRedactionEnabled()) {
+    const redacted = redactAll(texts);
+    if (redacted.replacements.length > 0) {
+      replacements = redacted.replacements;
+      sentNodes = nodes.map((n, i) => ({ id: n.id, text: redacted.texts[i] ?? n.text }));
+      if (followUp) sentFollowUp = redacted.texts[nodes.length];
+    }
+  }
+  const source = opts?.source?.trim() ? opts.source : nodes.map((n) => n.text).join("\n");
+  const raw = await streamWurkfloRewrite(
+    source,
+    opts?.site,
+    sentFollowUp,
+    opts?.handlers,
+    replacements.length > 0,
+    undefined,
+    sentNodes,
+  );
+  const map = parseKeyedRewrites(
+    raw,
+    nodes.map((n) => n.id),
+  );
+  if (!map) throw new ProviderError("empty", "The model returned an unusable keyed rewrite");
+  if (replacements.length === 0) return map;
+  const out: Record<string, string> = {};
+  for (const [id, value] of Object.entries(map)) {
+    out[id] = restoreRedaction(value, replacements);
+  }
+  return out;
 }
 
 /**
