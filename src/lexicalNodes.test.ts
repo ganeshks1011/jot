@@ -117,8 +117,8 @@ describe("lexicalTextLength", () => {
   it("sums node text lengths", () => {
     expect(
       lexicalTextLength([
-        { id: "0", text: "ab" },
-        { id: "1", text: "cde" },
+        { id: "0", text: "ab", block: "paragraph" },
+        { id: "1", text: "cde", block: "listitem" },
       ]),
     ).toBe(5);
     expect(lexicalTextLength([])).toBe(0);
