@@ -22,9 +22,15 @@
  * - Framework markers are data for *root resolution only* — one code path
  *   for all frameworks, never per-framework branches.
  * - Re-resolve the live root on every attempt; never trust a range cloned
- *   at capture time (frameworks re-render while the overlay is open).
- * - No op runs without verified focus and selection coverage; a failed
- *   verify with duplicated content aborts further writes immediately.
+ *   at capture time (frameworks re-render while the overlay is open). The
+ *   trace records root identity so a re-attached subtree is visible.
+ * - No op runs without verified focus and model-mapped selection coverage:
+ *   select, wait for one `selectionchange` (timeout ceiling), re-check.
+ * - Every retry starts from identical state: a diverged composer is
+ *   restored from snapshot first, and a restore that cannot verify aborts
+ *   the run instead of stacking another attempt on corrupted state.
+ * - Two circuit-breakers (verbatim duplication, absolute growth) and a
+ *   best-effort snapshot restore bound every failure mode.
  */
 
 import {
@@ -60,6 +66,12 @@ export interface RichTextDeps extends SlackDeps {
   getSelection: () => RichTextSelection | null;
   /** Resolves after the framework flushes a write to the DOM. */
   waitForFlush: () => Promise<void>;
+  /**
+   * Resolves after the framework maps the current DOM selection into its
+   * model (one `selectionchange` event, timeout ceiling). Absent callers
+   * fall back to `waitForFlush`.
+   */
+  awaitSelectionSynced?: () => Promise<void>;
   /** `closest` bound to the captured field (null when unavailable). */
   closestFromField: ((selector: string) => EditableElement | null) | null;
   /** `closest` bound to the currently focused element (null when unavailable). */
@@ -170,6 +182,8 @@ function traceWrite(info: {
   preOpLen: number;
   postOpLen: number;
   verifyOk: boolean;
+  sameRoot: boolean;
+  detail?: string;
 }): void {
   try {
     console.debug("[jot] rich-write", info);
@@ -178,10 +192,28 @@ function traceWrite(info: {
   }
 }
 
-/** Outcome of a write op: whether it ran, and what execCommand reported. */
+/** Outcome of a write op: whether it ran, what execCommand reported, and why it skipped. */
 interface WriteOpOutcome {
   completed: boolean;
   execReturn: boolean;
+  skipped?: "coverage-pre" | "coverage-post";
+}
+
+/**
+ * Wait for the framework to map the DOM selection into its model: one
+ * `selectionchange` event when observable, else the generic flush.
+ * Executing before the model catches up appends at a stale cursor.
+ */
+async function syncSelection(deps: RichTextDeps): Promise<void> {
+  if (deps.awaitSelectionSynced) {
+    try {
+      await deps.awaitSelectionSynced();
+      return;
+    } catch {
+      // Fall through to the flush below.
+    }
+  }
+  await deps.waitForFlush();
 }
 
 /**
@@ -195,9 +227,9 @@ async function runMultilineInsert(
   deps: RichTextDeps,
   text: string,
 ): Promise<WriteOpOutcome> {
-  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
-  await deps.waitForFlush();
-  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-pre" };
+  await syncSelection(deps);
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
   let execReturn = true;
   try {
     const lines = text.split("\n");
@@ -221,15 +253,15 @@ async function runMultilineInsert(
   }
 }
 
-/** Whole-text editing input: select, flush for model mapping, re-check, exec. Caller flushes and verifies. */
+/** Whole-text editing input: select, sync for model mapping, re-check, exec. Caller flushes and verifies. */
 async function runWholeInsert(
   root: EditableElement,
   deps: RichTextDeps,
   text: string,
 ): Promise<WriteOpOutcome> {
-  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
-  await deps.waitForFlush();
-  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-pre" };
+  await syncSelection(deps);
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
   let execReturn = false;
   try {
     execReturn = deps.execCommand("insertText", false, text);
@@ -320,10 +352,26 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
   if (!expected) return fail("");
   let lastReadBack = "";
   let snapshot: string | null = null;
+  let lastRoot: EditableElement | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const resolved = resolveFrameworkRoot(deps);
-    if (!resolved) continue;
+    if (!resolved) {
+      traceWrite({
+        attempt: diag.attempts,
+        op: "resolve-missed",
+        execReturn: false,
+        preOpLen: -1,
+        postOpLen: -1,
+        verifyOk: false,
+        sameRoot: false,
+      });
+      continue;
+    }
     const { root } = resolved;
+    // A re-attached editor subtree (custom elements re-render) resolves a
+    // different node per attempt — writing across roots stacks content.
+    const sameRoot = lastRoot !== null && lastRoot === root;
+    lastRoot = root;
     diag.tag = typeof root.tagName === "string" ? root.tagName.toUpperCase() : null;
     if (diag.preLen < 0) {
       snapshot = readComposerText(root);
@@ -336,8 +384,36 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
     }
     if (!focusLanded(root, deps)) continue;
     diag.attempts += 1;
+    // Every retry starts from identical state: restore the snapshot when a
+    // previous attempt left the composer diverged. A restore that cannot
+    // verify aborts the run instead of stacking another attempt on top.
+    if (attempt > 0 && snapshot !== null) {
+      const diverged = normalizeComposerMultiline(readComposerText(root)) !== normalizeComposerMultiline(snapshot);
+      if (diverged) {
+        await tryRestoreOriginal(deps, snapshot);
+        const afterResolve = resolveFrameworkRoot(deps);
+        const after = afterResolve ? readComposerText(afterResolve.root) : "";
+        if (normalizeComposerMultiline(after) !== normalizeComposerMultiline(snapshot)) {
+          // Restore failed: fail closed now instead of stacking another
+          // attempt (and another restore) on corrupted state.
+          return fail(after);
+        }
+      }
+    }
     const preOpLen = normalizeComposerMultiline(readComposerText(root)).length;
     const whole = await runWholeInsert(root, deps, text);
+    if (!whole.completed) {
+      traceWrite({
+        attempt: diag.attempts,
+        op: "whole-skipped",
+        execReturn: false,
+        preOpLen,
+        postOpLen: preOpLen,
+        verifyOk: false,
+        sameRoot,
+        detail: whole.skipped,
+      });
+    }
     if (whole.completed) {
       await deps.waitForFlush();
       const check = verifyExact(root, text);
@@ -350,12 +426,25 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
         preOpLen,
         postOpLen: actual.length,
         verifyOk: check.ok,
+        sameRoot,
       });
       if (isDuplicated(actual, expected) || isOvergrown(actual.length, diag.preLen, expectedLen)) break;
       if (check.ok) return succeed(check.readBack);
     }
     // Multiline select-all heals partial writes from the attempt above.
     const multi = await runMultilineInsert(root, deps, text);
+    if (!multi.completed) {
+      traceWrite({
+        attempt: diag.attempts,
+        op: "multiline-skipped",
+        execReturn: false,
+        preOpLen,
+        postOpLen: preOpLen,
+        verifyOk: false,
+        sameRoot,
+        detail: multi.skipped,
+      });
+    }
     if (multi.completed) {
       await deps.waitForFlush();
       const check = verifyExact(root, text);
@@ -368,6 +457,7 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
         preOpLen,
         postOpLen: actual.length,
         verifyOk: check.ok,
+        sameRoot,
       });
       if (isDuplicated(actual, expected) || isOvergrown(actual.length, diag.preLen, expectedLen)) break;
       if (check.ok) return succeed(check.readBack);
@@ -425,6 +515,41 @@ export function liveRichTextDeps(doc: Document, win: Window, activeField: HTMLEl
           finish();
         }
         setTimeout(finish, 150);
+      }),
+    // Lexical resyncs its model from selectionchange, so one post-select
+    // event is strictly better evidence than a fixed frame count. The
+    // timeout ceiling preserves the old behavior when nothing fires.
+    awaitSelectionSynced: () =>
+      new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (!done) {
+            done = true;
+            resolve();
+          }
+        };
+        const onChange = () => {
+          try {
+            doc.removeEventListener("selectionchange", onChange);
+          } catch {
+            // Listener removal is best effort.
+          }
+          finish();
+        };
+        try {
+          doc.addEventListener("selectionchange", onChange, { once: true });
+        } catch {
+          finish();
+          return;
+        }
+        setTimeout(() => {
+          try {
+            doc.removeEventListener("selectionchange", onChange);
+          } catch {
+            // Listener removal is best effort.
+          }
+          finish();
+        }, 150);
       }),
     closestFromField: bindClosest(activeField),
     get closestFromFocused() {

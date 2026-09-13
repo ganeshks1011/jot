@@ -329,6 +329,104 @@ describe("replaceRichText", () => {
     expect(execCommand).toHaveBeenCalledTimes(3);
     expect((root.innerText ?? "").endsWith("old")).toBe(true);
   });
+
+  it("restores the snapshot before retrying a diverged composer", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const execCommand = vi.fn((_command: string, _showUI: boolean, value: string) => {
+      if (value === "old") root.innerText = value; // restore replaces
+      else root.innerText = `${root.innerText ?? ""}!`; // ops append a fragment
+      return true;
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.attempts).toBe(3);
+    // Attempt 1 ops (2) + attempt 2 restore (1) and ops (2) + attempt 3
+    // restore (1) and ops (2) + final restore (1): every retry starts clean.
+    expect(execCommand).toHaveBeenCalledTimes(9);
+    expect(result.readBack).toBe("old");
+  });
+
+  it("aborts the run when the retry restore cannot verify", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const execCommand = vi.fn((_command: string, _showUI: boolean, value: string) => {
+      if (value.includes("\n")) {
+        root.innerText = `${root.innerText ?? ""}!`; // whole-op fragment
+        return true;
+      }
+      if (value === "old") {
+        root.innerText = `${root.innerText ?? ""}${value}`; // broken restore appends
+        return true;
+      }
+      return false; // line execs fail
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText("aa\nbb", d);
+    expect(result.ok).toBe(false);
+    // Attempt 1 (whole + line) then a single restore attempt that cannot
+    // verify: fail closed instead of stacking attempt 3 on corruption.
+    expect(execCommand).toHaveBeenCalledTimes(3);
+    expect(result.diagnostics.attempts).toBe(2);
+    expect(result.readBack).toBe("old!old");
+  });
+
+  it("prefers the selection event over a bare flush for model sync", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const syncSpy = vi.fn(async () => {});
+    const flushSpy = vi.fn(async () => {});
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      awaitSelectionSynced: syncSpy,
+      waitForFlush: flushSpy,
+    });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(true);
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+    expect(flushSpy).toHaveBeenCalledTimes(1); // post-op verify flush only
+  });
+
+  it("tracks root identity across attempts for re-attached editors", async () => {
+    const rootA = element({ tagName: "DIV", innerText: "old" });
+    const rootB = element({ tagName: "DIV", innerText: "old" });
+    const marker = FRAMEWORK_MARKERS.find((m) => m.id === "lexical");
+    if (!marker) throw new Error("missing lexical marker");
+    let resolves = 0;
+    let selected: EditableElement | null = null;
+    const execCommand = vi.fn((_command: string, _showUI: boolean, value: string) => {
+      if (!selected) return false;
+      // Restore replaces; ops append fragments (stale-model editor).
+      if (value === "old") selected.innerText = value;
+      else selected.innerText = `${selected.innerText ?? ""}!`;
+      return true;
+    });
+    const d = deps({
+      field: rootA,
+      closestFromField: (selector: string) => {
+        if (selector !== marker.selector) return null;
+        resolves += 1;
+        return resolves === 1 ? rootA : rootB; // re-attach after attempt 1
+      },
+      closestFromFocused: () => null,
+      execCommand,
+      getSelection: () => ({
+        selectAllChildren: (node: unknown) => {
+          selected = node as EditableElement;
+        },
+        selectionText: () => selected?.innerText ?? null,
+      }),
+    });
+    const seen: Array<Record<string, unknown>> = [];
+    const spy = vi.spyOn(console, "debug").mockImplementation((...args: unknown[]) => {
+      if (args[0] === "[jot] rich-write") seen.push(args[1] as Record<string, unknown>);
+    });
+    const result = await replaceRichText("new text", d);
+    spy.mockRestore();
+    expect(result.ok).toBe(false);
+    const wholeRoots = seen.filter((t) => t.op === "whole").map((t) => t.sameRoot);
+    expect(wholeRoots).toEqual([false, false, true]);
+    expect(result.readBack).toBe("old");
+  });
 });
 
 describe("liveRichTextDeps", () => {
