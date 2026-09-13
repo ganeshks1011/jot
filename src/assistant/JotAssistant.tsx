@@ -46,6 +46,8 @@ interface JotAssistantProps {
   source: JotSource;
   /** Re-run generation when this changes (extension: init key; web: open key). */
   autoGenerateKey: string;
+  /** Skip generation entirely (extension dev preview outside a host). */
+  autoGenerate?: boolean;
   adapter: JotHostAdapter;
   appearance?: JotAppearance;
   /** Analytics context; adapters enrich or ignore it. */
@@ -85,6 +87,7 @@ function prepareDomCopy(el: ContentNodeLike): void {
 export function JotAssistant({
   source,
   autoGenerateKey,
+  autoGenerate = true,
   adapter,
   appearance,
   site,
@@ -226,6 +229,10 @@ export function JotAssistant({
   // Auto-generate when the key changes (new init on extension, new open on
   // web). Queues behind an in-flight run rather than dropping.
   useEffect(() => {
+    if (!autoGenerate) {
+      setStatus("idle");
+      return;
+    }
     const current = sourceRef.current;
     nodesRef.current = current.nodes && current.nodes.length > 0 ? current.nodes : null;
     mapRef.current = null;
@@ -250,7 +257,7 @@ export function JotAssistant({
       void runGenerate(current.text, undefined, current.html ?? null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoGenerateKey]);
+  }, [autoGenerateKey, autoGenerate]);
 
   const close = useCallback(() => {
     // Stop an in-flight stream so it can't write state after dismissal.
@@ -299,7 +306,7 @@ export function JotAssistant({
         // Keyed flow: the host commits the map through the live instance;
         // `text` is the plain fallback and `html` the built preview HTML.
         await prime();
-        const outcome = adapter.insert({ text, html: keyedHtml });
+        const outcome = adapter.insert({ text, html: keyedHtml, map: keyedMap });
         setInserted(true);
         adapter.track("rewrite_applied", {
           site: siteRef.current,
@@ -315,9 +322,9 @@ export function JotAssistant({
         if (outcome.kind === "await-verdict") {
           // Verified targets: the host closes on success and holds the
           // panel open (copy/retry UI) on failure — never auto-close under
-          // an in-flight write. The 15s timer backstops a dead host only.
+          // an in-flight write. The settle timer backstops a dead host only.
           verdictUnsub.current = outcome.subscribe(handleVerdict);
-          verdictTimer.current = setTimeout(() => adapter.close(), 15000);
+          verdictTimer.current = setTimeout(() => adapter.close(), outcome.settleMs ?? 15000);
           return;
         }
         insertedTimer.current = setTimeout(() => adapter.close(), 700);

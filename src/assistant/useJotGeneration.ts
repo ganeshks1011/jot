@@ -47,7 +47,7 @@ export function useJotGeneration(
       if (refined) adapter.track("refinement_started", { site, editorType });
       try {
         const res = await adapter.rewrite(
-          { text, html, followUp },
+          { text, html, followUp, site, editorType },
           {
             signal: controller.signal,
             onToken: (delta) => {

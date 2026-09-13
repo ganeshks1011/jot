@@ -22,10 +22,10 @@ export function errorMessage(err: RewriteErrorShape): string {
 export function describeInsertMetrics(m: {
   strategy?: "exec" | "beforeinput" | "entity" | null;
   tag?: string | null;
-  preLen?: number;
-  postLen?: number;
-  expectedLen?: number;
-  attempts?: number;
+  preLen?: number | null;
+  postLen?: number | null;
+  expectedLen?: number | null;
+  attempts?: number | null;
 }): string {
   return (
     `via ${m.strategy ?? "?"} · composer ${m.tag ?? "?"} · ` +
