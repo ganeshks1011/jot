@@ -147,6 +147,17 @@ function isDuplicated(actual: string, expected: string): boolean {
 }
 
 /**
+ * Absolute-growth circuit-breaker slack (chars). Complements the verbatim
+ * count above: fragment stacks never form two exact copies but still bloat.
+ * Legit overshoot (trailing blocks, formatting wrappers) stays far below.
+ */
+const GROWTH_SLACK = 512;
+
+function isOvergrown(actualLen: number, preLen: number, expectedLen: number): boolean {
+  return preLen >= 0 && actualLen > preLen + expectedLen + GROWTH_SLACK;
+}
+
+/**
  * TEMPORARY diagnostic trace for a live duplication investigation (lengths
  * and tags only, never message content). Each write op reports what it did
  * so a reproduce-and-paste round identifies the appending op. Removed once
@@ -176,10 +187,16 @@ interface WriteOpOutcome {
 /**
  * Line-by-line insert for editors that mishandle embedded newlines in a
  * single `insertText` (the proven ProseMirror/TipTap pattern): select-all,
- * then `insertText` per line with `insertParagraph` between lines. Caller
- * flushes and verifies.
+ * flush so the model selection maps, re-check coverage, then `insertText`
+ * per line with `insertParagraph` between lines. Caller flushes and verifies.
  */
-function runMultilineInsert(root: EditableElement, deps: RichTextDeps, text: string): WriteOpOutcome {
+async function runMultilineInsert(
+  root: EditableElement,
+  deps: RichTextDeps,
+  text: string,
+): Promise<WriteOpOutcome> {
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
+  await deps.waitForFlush();
   if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
   let execReturn = true;
   try {
@@ -204,8 +221,14 @@ function runMultilineInsert(root: EditableElement, deps: RichTextDeps, text: str
   }
 }
 
-/** Whole-text editing input. Caller flushes and verifies. */
-function runWholeInsert(root: EditableElement, deps: RichTextDeps, text: string): WriteOpOutcome {
+/** Whole-text editing input: select, flush for model mapping, re-check, exec. Caller flushes and verifies. */
+async function runWholeInsert(
+  root: EditableElement,
+  deps: RichTextDeps,
+  text: string,
+): Promise<WriteOpOutcome> {
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
+  await deps.waitForFlush();
   if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
   let execReturn = false;
   try {
@@ -236,11 +259,43 @@ function verifyExact(root: EditableElement, text: string): { ok: boolean; readBa
 }
 
 /**
+ * Best-effort restore of the pre-write snapshot after a failed run that grew
+ * the composer: failure must leave the editor untouched, not bloated. Uses
+ * the same gated path as writes; silently gives up when it cannot resolve.
+ */
+async function tryRestoreOriginal(deps: RichTextDeps, snapshot: string): Promise<void> {
+  const resolved = resolveFrameworkRoot(deps);
+  if (!resolved) return;
+  const { root } = resolved;
+  try {
+    root.focus();
+  } catch {
+    return;
+  }
+  if (!focusLanded(root, deps)) return;
+  if (!selectAllVerified(root, deps)) return;
+  await deps.waitForFlush();
+  if (!selectAllVerified(root, deps)) return;
+  try {
+    deps.execCommand("insertText", false, snapshot);
+  } catch {
+    // Best effort only; the panel stays open with copy/retry either way.
+  }
+  try {
+    root.dispatchEvent(deps.createInputEvent());
+  } catch {
+    // Best effort only.
+  }
+  await deps.waitForFlush();
+}
+
+/**
  * Replace the framework composer contents via real editing input and verify.
  * Exactly one write op per strategy (whole-text, then line-by-line) with a
- * frame flush before every read-back; focus, selection coverage, and a
- * duplication circuit-breaker guard every step. Reports failure instead of
- * guessing — the caller keeps the panel open so the rewrite stays copyable.
+ * frame flush before every read-back; focus, selection coverage, and two
+ * circuit-breakers (verbatim duplication, absolute growth) guard every step.
+ * Reports failure instead of guessing — the caller keeps the panel open so
+ * the rewrite stays copyable.
  */
 export async function replaceRichText(text: string, deps: RichTextDeps): Promise<SlackReplaceResult> {
   const expected = normalizeComposerMultiline(text);
@@ -264,12 +319,16 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
   };
   if (!expected) return fail("");
   let lastReadBack = "";
+  let snapshot: string | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const resolved = resolveFrameworkRoot(deps);
     if (!resolved) continue;
     const { root } = resolved;
     diag.tag = typeof root.tagName === "string" ? root.tagName.toUpperCase() : null;
-    if (diag.preLen < 0) diag.preLen = normalizeComposerMultiline(readComposerText(root)).length;
+    if (diag.preLen < 0) {
+      snapshot = readComposerText(root);
+      diag.preLen = normalizeComposerMultiline(snapshot).length;
+    }
     try {
       root.focus();
     } catch {
@@ -278,7 +337,7 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
     if (!focusLanded(root, deps)) continue;
     diag.attempts += 1;
     const preOpLen = normalizeComposerMultiline(readComposerText(root)).length;
-    const whole = runWholeInsert(root, deps, text);
+    const whole = await runWholeInsert(root, deps, text);
     if (whole.completed) {
       await deps.waitForFlush();
       const check = verifyExact(root, text);
@@ -292,11 +351,11 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
         postOpLen: actual.length,
         verifyOk: check.ok,
       });
-      if (isDuplicated(actual, expected)) return fail(check.readBack);
+      if (isDuplicated(actual, expected) || isOvergrown(actual.length, diag.preLen, expectedLen)) break;
       if (check.ok) return succeed(check.readBack);
     }
     // Multiline select-all heals partial writes from the attempt above.
-    const multi = runMultilineInsert(root, deps, text);
+    const multi = await runMultilineInsert(root, deps, text);
     if (multi.completed) {
       await deps.waitForFlush();
       const check = verifyExact(root, text);
@@ -310,11 +369,18 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
         postOpLen: actual.length,
         verifyOk: check.ok,
       });
-      if (isDuplicated(actual, expected)) return fail(check.readBack);
+      if (isDuplicated(actual, expected) || isOvergrown(actual.length, diag.preLen, expectedLen)) break;
       if (check.ok) return succeed(check.readBack);
     }
   }
-  if (lastReadBack) return fail(lastReadBack);
+  if (lastReadBack) {
+    if (snapshot !== null && normalizeComposerMultiline(lastReadBack).length > diag.preLen) {
+      await tryRestoreOriginal(deps, snapshot);
+      const resolved = resolveFrameworkRoot(deps);
+      if (resolved) return fail(readComposerText(resolved.root));
+    }
+    return fail(lastReadBack);
+  }
   const resolved = resolveFrameworkRoot(deps);
   return fail(resolved ? readComposerText(resolved.root) : "");
 }

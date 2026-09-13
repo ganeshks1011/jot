@@ -221,9 +221,10 @@ describe("replaceRichText", () => {
     const result = await replaceRichText("new text", d);
     expect(result.ok).toBe(false);
     expect(result.diagnostics.strategy).toBeNull();
-    // One op applied twice, then the breaker trips — never nine copies.
-    expect(root.innerText).toBe("oldnew textnew text");
-    expect(execCommand).toHaveBeenCalledTimes(1);
+    // One op applied twice, then the breaker trips; restore appends the
+    // snapshot with this append-only fake (replace semantics live).
+    expect(execCommand).toHaveBeenCalledTimes(2);
+    expect((root.innerText ?? "").endsWith("old")).toBe(true);
   });
 
   it("reports diagnostics on failure without leaking text", async () => {
@@ -247,6 +248,86 @@ describe("replaceRichText", () => {
     // Whole-text + multiline exec per attempt across 3 attempts.
     expect(execCommand).toHaveBeenCalledTimes(6);
     expect(result.readBack).toBe("old content");
+  });
+
+  it("waits for the model selection to map before executing", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    let mapped: string | null = null; // model selection: nothing mapped yet
+    let domSel = "";
+    const execCommand = vi.fn((command: string, _showUI: boolean, value: string) => {
+      if (command !== "insertText") return false;
+      // The framework executes against the MAPPED selection: a stale
+      // mapping appends at the old cursor instead of replacing.
+      if (mapped === root.innerText) root.innerText = value;
+      else root.innerText = `${root.innerText}${value}`;
+      return true;
+    });
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand,
+      getSelection: () => ({
+        selectAllChildren: (_node: unknown) => {
+          domSel = root.innerText ?? "";
+        },
+        selectionText: () => mapped,
+      }),
+      waitForFlush: async () => {
+        mapped = domSel; // flush commits the DOM selection into the model
+      },
+    });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(true);
+    expect(root.innerText).toBe("new text");
+    expect(result.diagnostics.attempts).toBe(1);
+  });
+
+  it("skips the op when the mapped selection never covers the editor", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "full text here" });
+    const execCommand = vi.fn(() => true);
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand,
+      getSelection: () => ({
+        selectAllChildren: () => {},
+        selectionText: () => "stale",
+      }),
+    });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(false);
+    expect(execCommand).not.toHaveBeenCalled();
+    expect(root.innerText).toBe("full text here");
+  });
+
+  it("aborts when content outgrows the expected write", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const execCommand = vi.fn((_command: string, _showUI: boolean, value: string) => {
+      // The rewrite write blows past the growth cap; the restore write applies.
+      root.innerText = `${root.innerText}${value === "new text" ? "z".repeat(600) : value}`;
+      return true;
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(false);
+    // Growth cap trips on the first op; restore appends the snapshot with
+    // this append-only fake (replace semantics live).
+    expect(execCommand).toHaveBeenCalledTimes(2);
+    expect((root.innerText ?? "").endsWith("old")).toBe(true);
+  });
+
+  it("attempts snapshot restore when a failed run grew the composer", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const execCommand = vi.fn((_command: string, _showUI: boolean, value: string) => {
+      root.innerText = `${root.innerText}${value}`; // append-only editor
+      return true;
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(false);
+    // Whole-text append, multiline append (trips the breaker), restore.
+    expect(execCommand).toHaveBeenCalledTimes(3);
+    expect((root.innerText ?? "").endsWith("old")).toBe(true);
   });
 });
 
