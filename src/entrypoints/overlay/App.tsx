@@ -77,6 +77,8 @@ export default function App() {
   const [placement, setPlacement] = useState<OverlayPlacement>("float");
   const [composerBg, setComposerBg] = useState<string | null>(null);
   const [composerFg, setComposerFg] = useState<string | null>(null);
+  const [pageDark, setPageDark] = useState<boolean | null>(null);
+  const [connectorX, setConnectorX] = useState<number | null>(null);
   const [maxPanelHeight, setMaxPanelHeight] = useState<number | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
@@ -231,6 +233,7 @@ export default function App() {
     return onMetrics((msg) => {
       setPlacement(msg.placement);
       setMaxPanelHeight(msg.maxPanelHeight);
+      setConnectorX(msg.connectorX ?? null);
     });
   }, []);
 
@@ -256,7 +259,7 @@ export default function App() {
   }, [maxPanelHeight, output, status, hasFormatting]);
 
   // Paint audit: computed backgrounds after first paint, to diagnose
-  // glow-band discoloration reports. Theme values only, never content.
+  // background pairing issues. Theme values only, never content.
   useEffect(() => {
     const t = setTimeout(() => {
       try {
@@ -333,6 +336,8 @@ export default function App() {
       setMaxPanelHeight(msg.maxPanelHeight ?? null);
       setComposerBg(msg.composerBg ?? null);
       setComposerFg(msg.composerFg ?? null);
+      setPageDark(msg.pageDark ?? null);
+      setConnectorX(msg.connectorX ?? null);
       try {
         // Theme colors only. Diagnostic trail for background pairing issues.
         console.debug("[jot] composer colors", {
@@ -546,27 +551,46 @@ export default function App() {
 
   // Sampled composer colors as CSS vars, applied only as a pair: a lone
   // bg or fg would pair a sampled color against a mismatched theme color.
-  // Unset = theme styling untouched. Paired cards drop their border and
-  // take the composer background so overlay and composer read as one.
+  // Unset = theme styling untouched. Paired cards take the composer
+  // background as their face so overlay and composer read as one.
   // Detached center modals always use the theme surface (no composer tint).
+  // The shadow is neutral and page-aware: white on dark pages, black on
+  // light pages, falling back to the overlay's own theme.
   const isCenter = placement === "center";
   const paired = composerBg !== null && composerFg !== null && !isCenter;
-  const cardVars = paired
-    ? ({
-        "--jot-cbg": composerBg,
-        "--jot-cfg": composerFg,
-        backgroundColor: "var(--jot-cbg)",
-      } as CSSProperties)
-    : undefined;
+  const overlayDark = typeof document !== "undefined" && document.documentElement.dataset.theme === "dark";
+  const pageIsDark = pageDark ?? overlayDark;
+  const cardVars = {
+    "--jot-shadow": pageIsDark ? "0 8px 30px rgb(255 255 255 / 0.14)" : "0 8px 30px rgb(0 0 0 / 0.18)",
+    ...(paired
+      ? {
+          "--jot-cbg": composerBg,
+          "--jot-cfg": composerFg,
+          "--jot-card-face": "var(--jot-cbg)",
+        }
+      : {}),
+  } as CSSProperties;
 
   const card = (
     <Card
       ref={rootRef}
       style={cardVars}
-      className={`jot-card-glow relative w-full gap-2 overflow-visible rounded-[8px] border border-border bg-surface/80 px-3 pb-3 pt-1 backdrop-blur-xl${paired ? " jot-paired" : ""}${isCenter ? " jot-modal-card" : ""}`}
+      className={`jot-card-glow relative w-full gap-2 overflow-visible rounded-[8px] px-3 pb-3 pt-1 backdrop-blur-xl${paired ? " jot-paired" : ""}${isCenter ? " jot-modal-card" : ""}`}
     >
-      {placement === "below" && <span aria-hidden className="jot-connector jot-connector-top" />}
-      {placement === "above" && <span aria-hidden className="jot-connector jot-connector-bottom" />}
+      {placement === "below" && (
+        <span
+          aria-hidden
+          className="jot-connector jot-connector-top"
+          style={connectorX != null ? { left: connectorX } : undefined}
+        />
+      )}
+      {placement === "above" && (
+        <span
+          aria-hidden
+          className="jot-connector jot-connector-bottom"
+          style={connectorX != null ? { left: connectorX } : undefined}
+        />
+      )}
       <Card.Header className="flex-row items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
           <img src={browser.runtime.getURL("/icon/icon128.png")} alt="" className="size-5 rounded-md" />

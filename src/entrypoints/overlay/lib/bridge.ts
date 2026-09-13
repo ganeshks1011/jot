@@ -24,6 +24,10 @@ export interface OverlayInitMessage {
   /** Sampled composer colors to mirror (null = theme fallback). */
   composerBg?: string | null;
   composerFg?: string | null;
+  /** True when the page behind the panel is dark (neutral shadow color). */
+  pageDark?: boolean | null;
+  /** Card-relative x of the connector diamond (null = hidden). */
+  connectorX?: number | null;
   /** Panel height budget in px (null = default cap). */
   maxPanelHeight?: number | null;
   /** Sanitized HTML fragment when the capture carried formatting. */
@@ -39,6 +43,7 @@ export interface HostMetricsMessage {
   type: "metrics";
   placement: OverlayPlacement;
   maxPanelHeight: number | null;
+  connectorX: number | null;
 }
 
 export type OverlayOutMessage =

@@ -96,38 +96,27 @@ body {
 /* Unlayered so these beat component classes only when the vars are set;
    unset vars invalidate the declaration and theme styling applies. */
 
+:root {
+  /* Default card face (unpaired): theme surface at 80% so the blur reads.
+     Paired cards override with the composer background. */
+  --jot-card-face: color-mix(in srgb, var(--surface) 80%, transparent);
+}
+
+/* Professional chrome: purple→red gradient border, neutral page-aware
+   shadow (white on dark pages, black on light pages via --jot-shadow).
+   No colored glow, no breathing animation. */
 .jot-card-glow {
-  box-shadow:
-    0 0 12px 1px color-mix(in srgb, var(--brand-glow-from) 22%, transparent),
-    0 0 28px 4px color-mix(in srgb, var(--brand-glow-to) 13%, transparent),
-    0 2px 8px rgb(0 0 0 / 0.05);
-  animation: jot-glow-breathe 4s ease-in-out infinite;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--jot-card-face), var(--jot-card-face)) padding-box,
+    linear-gradient(135deg, #7c3aed, #ef4444) border-box;
+  box-shadow: var(--jot-shadow, 0 8px 30px rgb(0 0 0 / 0.18));
+  animation: none;
 }
 
-/* Gentle breathe between the resting glow and a slightly tighter variant.
-   Same shadow-list length both ends so it interpolates cleanly. */
-@keyframes jot-glow-breathe {
-  0%,
-  100% {
-    box-shadow:
-      0 0 12px 1px color-mix(in srgb, var(--brand-glow-from) 22%, transparent),
-      0 0 28px 4px color-mix(in srgb, var(--brand-glow-to) 13%, transparent),
-      0 2px 8px rgb(0 0 0 / 0.05);
-  }
-  50% {
-    box-shadow:
-      0 0 9px 1px color-mix(in srgb, var(--brand-glow-from) 28%, transparent),
-      0 0 22px 3px color-mix(in srgb, var(--brand-glow-to) 17%, transparent),
-      0 2px 8px rgb(0 0 0 / 0.05);
-  }
-}
-
-/* Paired cards merge into the composer: no border, secondary text derived
-   from the sampled pair. Warning/danger surfaces are excluded by keeping
-   their own explicit color classes. */
-.jot-paired {
-  border-color: transparent;
-}
+/* Paired cards merge into the composer: secondary text derived from the
+   sampled pair. Warning/danger surfaces are excluded by keeping their own
+   explicit color classes. (The gradient border stays — it is the chrome.) */
 
 .jot-paired .jot-secondary {
   color: color-mix(in srgb, var(--jot-cfg) 65%, var(--jot-cbg));
@@ -141,31 +130,18 @@ body {
   color: var(--jot-cfg);
 }
 
-/* Connector diamond centered on the composer-facing card edge. Flat fill
-   matching the card background (reverted: gradient fill regressed to a
-   black tab — see ff251fc). */
+/* Connector diamond on the composer-facing card edge. The host sends the
+   card-relative x of the anchor box center (connectorX); without it, fall
+   back to card center. Flat fill matching the card face. */
 .jot-connector {
   position: absolute;
   left: 50%;
   width: 10px;
   height: 10px;
   transform: translateX(-50%) rotate(45deg);
-  background: var(--jot-cbg, var(--surface));
+  background: var(--jot-card-face);
   pointer-events: none;
-  animation: jot-gradient-sweep 6s linear infinite;
-}
-
-/* Slow gradient sweep for brand-gradient surfaces. */
-@keyframes jot-gradient-sweep {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+  animation: none;
 }
 
 .jot-connector-top {
@@ -177,9 +153,9 @@ body {
 }
 
 /* Read-only preview: no focus ring (explicit exception to the HeroUI ring
-   rule — focus context is conveyed by the composer aura + connector, and
-   the box is never edited). Focus landing, trap order, and aria-label are
-   unchanged. */
+   rule — focus context is conveyed by the composer highlight + connector,
+   and the box is never edited). Focus landing, trap order, and aria-label
+   are unchanged. */
 #jot-content:focus,
 #jot-content:focus-visible {
   outline: none;
@@ -187,7 +163,8 @@ body {
 }
 
 /* Rewritten result: prominent, in the composer's text color, scrolling
-   independently inside a viewport-bounded overlay. */
+   independently inside a viewport-bounded overlay. Height glides as
+   streamed text grows (the host animates the iframe in step). */
 #jot-content {
   font-size: 15px;
   line-height: 1.65;
@@ -196,6 +173,7 @@ body {
      (38vh fallback without an anchor). */
   max-height: var(--jot-content-max, 38vh);
   overflow-y: auto;
+  transition: height 180ms ease;
 }
 
 /* Tweak box: borderless wash tinted from the composer pair. Scoped to
@@ -234,11 +212,40 @@ body {
   width: 100%;
   max-width: 800px;
   overflow: hidden;
+  animation: jot-modal-in 220ms ease-out;
+}
+
+@keyframes jot-modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.jot-modal-backdrop {
+  animation: jot-fade-in 180ms ease-out;
+}
+
+@keyframes jot-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .jot-card-glow,
-  .jot-connector {
+  .jot-connector,
+  .jot-modal-card,
+  .jot-modal-backdrop,
+  #jot-content {
     animation: none;
+    transition: none;
   }
 }
