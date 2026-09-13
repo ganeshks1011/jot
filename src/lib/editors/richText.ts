@@ -240,6 +240,14 @@ function traceDegrade(info: {
   preOpLen?: number;
   postOpLen?: number;
   shape?: { lcpLen: number; lcsLen: number; startsWith: boolean; endsWith: boolean };
+  /**
+   * TEMPORARY content-bearing diagnostics for the tag-stripping
+   * investigation: exact normalized strings being compared. Local console
+   * only — contains the user's draft text, so redact before sharing
+   * anywhere. Removed with the rest of this trace once confirmed.
+   */
+  actual?: string;
+  expected?: string;
 }): void {
   try {
     console.log("[jot] degrade", info);
@@ -505,6 +513,8 @@ async function runHtmlInsert(
       reason: "verify-false",
       postOpLen: actual.length,
       shape: describeShape(actual, plainExpected),
+      actual,
+      expected: plainExpected,
     });
   }
   // Attempt 1: synthetic paste. On dispatch-but-no-verify, fall through to
@@ -522,6 +532,8 @@ async function runHtmlInsert(
       reason: "verify-false",
       postOpLen: actual.length,
       shape: describeShape(actual, plainExpected),
+      actual,
+      expected: plainExpected,
     });
   } else if (!pasted.completed) {
     traceDegrade({
@@ -787,6 +799,8 @@ export async function replaceRichText(
           preOpLen,
           postOpLen: actual.length,
           shape: describeShape(actual, plainExpected),
+          actual,
+          expected: plainExpected,
         });
       }
     }
@@ -837,6 +851,8 @@ export async function replaceRichText(
         preOpLen,
         postOpLen: actual.length,
         shape: describeShape(actual, expected),
+        actual,
+        expected,
       });
     }
     // Multiline select-all heals partial writes from the attempt above.
@@ -887,6 +903,8 @@ export async function replaceRichText(
         preOpLen,
         postOpLen: actual.length,
         shape: describeShape(actual, expected),
+        actual,
+        expected,
       });
     }
   }
