@@ -188,6 +188,93 @@ describe("replaceRichText", () => {
     expect(result.diagnostics.attempts).toBe(3);
   });
 
+  it("verifies across list-marker convention mismatch", async () => {
+    // Model text marks items with "- "; the rendered editor carries real
+    // list nodes whose innerText has no dashes. Same words, different
+    // markers — must verify (old containment failed both directions).
+    const rewrite =
+      "- alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu\n" +
+      "- one two three four five six seven eight nine ten eleven twelve";
+    const backing = { v: "old" };
+    const root = element({ tagName: "DIV" });
+    Object.defineProperty(root, "innerText", {
+      get: () =>
+        backing.v
+          .split("\n")
+          .map((line) => line.replace(/^- /, ""))
+          .join("\n"),
+      set: (v: string) => {
+        backing.v = v;
+      },
+      configurable: true,
+    });
+    const marker = FRAMEWORK_MARKERS.find((m) => m.id === "lexical");
+    if (!marker) throw new Error("missing lexical marker");
+    const closest = (selector: string) => (selector === marker.selector ? root : null);
+    const execCommand = vi.fn((command: string, _showUI: boolean, value: string) => {
+      if (command === "delete") {
+        backing.v = "";
+        return true;
+      }
+      if (command === "insertText") {
+        backing.v = value;
+        return true;
+      }
+      return false;
+    });
+    const d = deps({
+      field: root,
+      focused: root,
+      closestFromField: closest,
+      closestFromFocused: closest,
+      execCommand,
+    });
+    const result = await replaceRichText(rewrite, d);
+    expect(result.ok).toBe(true);
+    expect(backing.v).toBe(rewrite);
+  });
+
+  it("verifies interior micro-edits within slack", async () => {
+    // Same length, three changed chars mid-string: containment fails both
+    // directions, edit distance 3 fits the bound.
+    const rewrite =
+      "The quick brown fox jumps over the lazy dog near the riverbank at dawn " +
+      "and continues onward through the meadow.";
+    const backing = { v: "old" };
+    const root = element({ tagName: "DIV" });
+    Object.defineProperty(root, "innerText", {
+      get: () => backing.v.replace("dog", "cat"),
+      set: (v: string) => {
+        backing.v = v;
+      },
+      configurable: true,
+    });
+    const marker = FRAMEWORK_MARKERS.find((m) => m.id === "lexical");
+    if (!marker) throw new Error("missing lexical marker");
+    const closest = (selector: string) => (selector === marker.selector ? root : null);
+    const execCommand = vi.fn((command: string, _showUI: boolean, value: string) => {
+      if (command === "delete") {
+        backing.v = "";
+        return true;
+      }
+      if (command === "insertText") {
+        backing.v = value;
+        return true;
+      }
+      return false;
+    });
+    const d = deps({
+      field: root,
+      focused: root,
+      closestFromField: closest,
+      closestFromFocused: closest,
+      execCommand,
+    });
+    const result = await replaceRichText(rewrite, d);
+    expect(result.ok).toBe(true);
+    expect(backing.v).toBe(rewrite);
+  });
+
   it("verifies a perfect write the editor trims shorter (boundary strip)", async () => {
     // Regression: a 60-char rewrite reading back 3 chars short (editor
     // sheds trailing block whitespace) must verify — one-sided includes
