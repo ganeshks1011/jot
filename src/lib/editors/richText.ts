@@ -225,6 +225,28 @@ function traceWrite(info: {
   }
 }
 
+/**
+ * TEMPORARY degrade-step trace for the live tag-stripping investigation.
+ * Logs every fallback transition (not just op outcomes) via console.log so
+ * it is visible without the Verbose level. Lengths, tags, and reasons
+ * only — never message content. Removed once the stripping step is
+ * confirmed.
+ */
+function traceDegrade(info: {
+  attempt: number;
+  from: string;
+  to: string;
+  reason?: string;
+  preOpLen?: number;
+  postOpLen?: number;
+}): void {
+  try {
+    console.log("[jot] degrade", info);
+  } catch {
+    // Logging must never break insertion.
+  }
+}
+
 /** Outcome of a write op: whether it ran, what execCommand reported, and why it skipped. */
 interface WriteOpOutcome {
   completed: boolean;
@@ -426,7 +448,10 @@ async function runHtmlInsert(
   root: EditableElement,
   deps: RichTextDeps,
   html: string,
-): Promise<WriteOpOutcome & { mechanism?: "clipboard" | "paste" | "exec"; pasteTried?: boolean; clipboardTried?: boolean }> {
+  attempt = 0,
+): Promise<
+  WriteOpOutcome & { mechanism?: "clipboard" | "paste" | "exec"; pasteTried?: boolean; clipboardTried?: boolean }
+> {
   const cleared = await clearEditor(root, deps);
   if (cleared === "failed") return { completed: false, execReturn: false, skipped: "clear-failed" };
   const plainExpected = normalizeComposerMultiline(htmlToPlainText(html));
@@ -438,8 +463,14 @@ async function runHtmlInsert(
   if (clipped.completed && plainExpected) {
     await deps.waitForFlush();
     const actual = normalizeComposerMultiline(readComposerText(root));
-    if (actual.includes(plainExpected))
-      return { ...clipped, mechanism: "clipboard" as const, clipboardTried: true };
+    if (actual.includes(plainExpected)) return { ...clipped, mechanism: "clipboard" as const, clipboardTried: true };
+    traceDegrade({
+      attempt,
+      from: "html-clipboard-paste",
+      to: "html-paste",
+      reason: "verify-false",
+      postOpLen: actual.length,
+    });
   }
   // Attempt 1: synthetic paste. On dispatch-but-no-verify, fall through to
   // exec below: re-select covers whatever the paste left, so the replace
@@ -449,6 +480,21 @@ async function runHtmlInsert(
     await deps.waitForFlush();
     const actual = normalizeComposerMultiline(readComposerText(root));
     if (actual.includes(plainExpected)) return { ...pasted, mechanism: "paste" as const, pasteTried: true };
+    traceDegrade({
+      attempt,
+      from: "html-paste",
+      to: "html-exec",
+      reason: "verify-false",
+      postOpLen: actual.length,
+    });
+  } else if (!pasted.completed) {
+    traceDegrade({
+      attempt,
+      from: "html-paste",
+      to: "html-exec",
+      reason: pasted.skipped ?? "skipped",
+      postOpLen: normalizeComposerMultiline(readComposerText(root)).length,
+    });
   }
   const pasteTried = pasted.completed;
   // Attempt 2: trusted execCommand insertHTML.
@@ -598,12 +644,26 @@ export async function replaceRichText(
     if (attempt > 0 && snapshot !== null) {
       const diverged = normalizeComposerMultiline(readComposerText(root)) !== normalizeComposerMultiline(snapshot);
       if (diverged) {
+        traceDegrade({
+          attempt: diag.attempts,
+          from: "retry-diverged",
+          to: "restore",
+          preOpLen: normalizeComposerMultiline(readComposerText(root)).length,
+          postOpLen: normalizeComposerMultiline(snapshot).length,
+        });
         await tryRestoreOriginal(deps, snapshot);
         const afterResolve = resolveFrameworkRoot(deps);
         const after = afterResolve ? readComposerText(afterResolve.root) : "";
         if (normalizeComposerMultiline(after) !== normalizeComposerMultiline(snapshot)) {
           // Restore failed: fail closed now instead of stacking another
           // attempt (and another restore) on corrupted state.
+          traceDegrade({
+            attempt: diag.attempts,
+            from: "restore",
+            to: "abort",
+            reason: "restore-unverifiable",
+            postOpLen: normalizeComposerMultiline(after).length,
+          });
           return fail(after);
         }
       }
@@ -616,7 +676,7 @@ export async function replaceRichText(
     const cleanHtml = html?.trim() ? html : null;
     const plainExpected = cleanHtml ? normalizeComposerMultiline(htmlToPlainText(cleanHtml)) : "";
     if (cleanHtml && plainExpected) {
-      const rich = await runHtmlInsert(root, deps, cleanHtml);
+      const rich = await runHtmlInsert(root, deps, cleanHtml, diag.attempts);
       if (!rich.completed) {
         traceWrite({
           attempt: diag.attempts,
@@ -656,9 +716,25 @@ export async function replaceRichText(
                 : undefined,
         });
         if (isDuplicated(actual, plainExpected) || isOvergrown(actual.length, diag.preLen, plainExpected.length)) {
+          traceDegrade({
+            attempt: diag.attempts,
+            from: rich.mechanism === "clipboard" ? "html-clipboard-paste" : "html",
+            to: "abort",
+            reason: isDuplicated(actual, plainExpected) ? "breaker-duplicated" : "breaker-overgrown",
+            preOpLen,
+            postOpLen: actual.length,
+          });
           break;
         }
         if (htmlOk) return succeed(readBack);
+        traceDegrade({
+          attempt: diag.attempts,
+          from: rich.mechanism === "clipboard" ? "html-clipboard-paste" : "html",
+          to: "plain-whole",
+          reason: "verify-false",
+          preOpLen,
+          postOpLen: actual.length,
+        });
       }
     }
     const whole = await runWholeInsert(root, deps, text);
@@ -688,8 +764,26 @@ export async function replaceRichText(
         verifyOk: check.ok,
         sameRoot,
       });
-      if (isDuplicated(actual, expected) || isOvergrown(actual.length, diag.preLen, expectedLen)) break;
+      if (isDuplicated(actual, expected) || isOvergrown(actual.length, diag.preLen, expectedLen)) {
+        traceDegrade({
+          attempt: diag.attempts,
+          from: "plain-whole",
+          to: "abort",
+          reason: isDuplicated(actual, expected) ? "breaker-duplicated" : "breaker-overgrown",
+          preOpLen,
+          postOpLen: actual.length,
+        });
+        break;
+      }
       if (check.ok) return succeed(check.readBack);
+      traceDegrade({
+        attempt: diag.attempts,
+        from: "plain-whole",
+        to: "plain-multiline",
+        reason: "verify-false",
+        preOpLen,
+        postOpLen: actual.length,
+      });
     }
     // Multiline select-all heals partial writes from the attempt above.
     const multi = await runMultilineInsert(root, deps, text);
@@ -719,16 +813,53 @@ export async function replaceRichText(
         verifyOk: check.ok,
         sameRoot,
       });
-      if (isDuplicated(actual, expected) || isOvergrown(actual.length, diag.preLen, expectedLen)) break;
+      if (isDuplicated(actual, expected) || isOvergrown(actual.length, diag.preLen, expectedLen)) {
+        traceDegrade({
+          attempt: diag.attempts,
+          from: "plain-multiline",
+          to: "abort",
+          reason: isDuplicated(actual, expected) ? "breaker-duplicated" : "breaker-overgrown",
+          preOpLen,
+          postOpLen: actual.length,
+        });
+        break;
+      }
       if (check.ok) return succeed(check.readBack);
+      traceDegrade({
+        attempt: diag.attempts,
+        from: "plain-multiline",
+        to: "next-attempt",
+        reason: "verify-false",
+        preOpLen,
+        postOpLen: actual.length,
+      });
     }
   }
   if (lastReadBack) {
     if (snapshot !== null && normalizeComposerMultiline(lastReadBack).length > diag.preLen) {
       await tryRestoreOriginal(deps, snapshot);
       const resolved = resolveFrameworkRoot(deps);
-      if (resolved) return fail(readComposerText(resolved.root));
+      if (resolved) {
+        const restored = readComposerText(resolved.root);
+        traceDegrade({
+          attempt: diag.attempts,
+          from: "restore",
+          to: "fail",
+          reason: "growth-restore-attempted",
+          preOpLen: diag.preLen,
+          postOpLen: normalizeComposerMultiline(restored).length,
+        });
+        return fail(restored);
+      }
     }
+    traceDegrade({
+      attempt: diag.attempts,
+      from: "loop-exhausted",
+      to: "fail",
+      reason: "verify-false",
+      preOpLen: diag.preLen,
+      postOpLen: normalizeComposerMultiline(lastReadBack).length,
+    });
     return fail(lastReadBack);
   }
   const resolved = resolveFrameworkRoot(deps);
