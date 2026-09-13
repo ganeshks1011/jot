@@ -1,6 +1,6 @@
 import { browser } from "wxt/browser";
 import { defineUnlistedScript } from "wxt/utils/define-unlisted-script";
-import { liveRichTextDeps, replaceRichText, resolveFrameworkRoot } from "@/lib/editors/richText";
+import { liveRichTextDeps, pasteClipboardOnce, resolveFrameworkRoot } from "@/lib/editors/richText";
 import {
   alignMentionEntities,
   isSlackComposer,
@@ -913,15 +913,16 @@ function createHost(): HostController {
     }
 
     // Model-driven editors (Lexical, Slate, ProseMirror/TipTap, Quill,
-    // Draft.js, CKEditor) reconcile the DOM against internal state, so range
-    // surgery is silently reverted. Verified editing input instead, rich
-    // HTML first when present (re-sanitized defensively; the overlay
-    // already sanitizes once).
+    // Draft.js, CKEditor) take exactly one clipboard paste: the overlay
+    // primed real flavors on Enter. No read-back, no retry, no fallback —
+    // a refused paste is atomic at the selection and leaves the editor
+    // untouched; recovery is the Copy button.
     const richTextDeps = liveRichTextDeps(document, window, activeField);
-    if (resolveFrameworkRoot(richTextDeps)) {
-      const result = await replaceRichText(text, richTextDeps, html ? sanitizeRichHtml(html) : null);
-      if (result.ok) capturedRange = null;
-      return { ok: result.ok, diagnostics: result.diagnostics };
+    const frameworkRoot = resolveFrameworkRoot(richTextDeps);
+    if (frameworkRoot) {
+      pasteClipboardOnce(frameworkRoot.root, richTextDeps);
+      capturedRange = null;
+      return { ok: true };
     }
 
     if (activeField instanceof HTMLTextAreaElement || activeField instanceof HTMLInputElement) {

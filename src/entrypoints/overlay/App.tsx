@@ -75,12 +75,14 @@ function prepareDomCopy(el: ContentNodeLike): void {
 
 /**
  * Best-effort clipboard priming for the host's clipboard-paste tier: write
- * HTML flavors when present so a trusted paste pulls them through the most
- * native path. Never throws, never blocks the insert that follows. Plain
- * inserts skip the clipboard entirely.
+ * Best-effort clipboard priming for the host's single paste: copies the
+ * live preview node (HTML flavors when present, plain value otherwise) so
+ * the clipboard always holds this rewrite and never another app's content.
+ * Never throws, never blocks the insert that follows.
  */
 async function primeClipboardForInsert(html: string | null, plain: string): Promise<void> {
-  if (!html?.trim()) return;
+  // Every insert primes the clipboard (plain minimum) so the host's single
+  // paste can never fire on another app's content. Best effort only.
   try {
     await copyDomHtml(
       () => document.getElementById("jot-content") as ContentNodeLike | null,
