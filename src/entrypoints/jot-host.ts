@@ -242,6 +242,10 @@ function createHost(): HostController {
     const frame = document.createElement("iframe");
     frame.src = OVERLAY_URL;
     frame.style.position = "fixed";
+    // Cross-origin (chrome-extension:// inside https://) defaults deny the
+    // async clipboard API; delegate clipboard-write so the overlay's Copy
+    // buttons can write HTML flavors. No manifest change required.
+    frame.setAttribute("allow", "clipboard-write");
     // Sane default until positionIframe runs during openPanel.
     frame.style.width = `${Math.min(824, window.innerWidth)}px`;
     frame.style.height = "0px";

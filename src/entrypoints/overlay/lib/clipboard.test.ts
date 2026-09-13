@@ -176,4 +176,51 @@ describe("copyDomHtml", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("legacy-copies the node via selection when flavors are denied", async () => {
+    const prepared: unknown[] = [];
+    const write = vi.fn(async () => {
+      throw new Error("denied");
+    });
+    vi.stubGlobal("ClipboardItem", class {});
+    try {
+      const el = divNode("<p>Hi</p>", "Hi");
+      const result = await copyDomHtml(
+        () => el,
+        { writeText: vi.fn(), write },
+        null,
+        () => true,
+        (target) => {
+          prepared.push(target);
+        },
+      );
+      expect(result).toBe("html");
+      expect(prepared).toEqual([el]);
+      expect(write).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("degrades to plain when node selection fails", async () => {
+    const writeText = vi.fn(async () => {});
+    const write = vi.fn(async () => {
+      throw new Error("denied");
+    });
+    vi.stubGlobal("ClipboardItem", class {});
+    try {
+      const el = divNode("<p>Hi</p>", "Hi");
+      const result = await copyDomHtml(
+        () => el,
+        { writeText, write },
+        null,
+        () => false,
+        () => {},
+      );
+      expect(result).toBe("plain");
+      expect(writeText).toHaveBeenCalledWith("Hi");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });

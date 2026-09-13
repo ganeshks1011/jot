@@ -92,15 +92,19 @@ export interface ContentNodeLike {
  * Copy the live `#jot-content` preview DOM verbatim: the preview div's
  * inner HTML plus its rendered text, with no sanitize or rebuild pass.
  * (Render already sanitizes on the way in, so the DOM holds nothing
- * unsanitized.) Textareas copy their value as plain text. Returns which
- * path succeeded, or false when no usable node exists (caller falls back
- * to its state-derived copy; never throws for missing DOM).
+ * unsanitized.) Textareas copy their value as plain text. When the async
+ * flavor write is unavailable or denied (e.g. iframe permissions policy),
+ * falls back to a legacy rich copy — select the node and execCommand — so
+ * formatting survives exactly like a manual Cmd+C. Returns which path
+ * succeeded, or false when no usable node exists (caller falls back to
+ * its state-derived copy; never throws for missing DOM).
  */
 export async function copyDomHtml(
   getEl: () => ContentNodeLike | null,
   clipboard?: ClipboardLike | null,
   doc?: Document | null,
   execCopy?: (() => boolean) | null,
+  prepareCopy?: ((el: ContentNodeLike) => void) | null,
 ): Promise<"html" | "plain" | false> {
   let el: ContentNodeLike | null;
   try {
@@ -124,6 +128,14 @@ export async function copyDomHtml(
         }),
       ]);
       return "html";
+    } catch {
+      // Fall through to the legacy rich copy below.
+    }
+  }
+  if (prepareCopy && execCopy) {
+    try {
+      prepareCopy(el);
+      if (execCopy()) return "html";
     } catch {
       // Fall through to plain-only copy below.
     }

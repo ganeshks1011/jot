@@ -63,6 +63,16 @@ const openUpgradePage = (upgrade: ProviderError["upgrade"]) => {
   void browser.tabs.create({ url });
 };
 
+/** Select the live preview node so a legacy execCommand copy carries its
+ *  HTML (same as manual Cmd+C). Throws when selection is unavailable so
+ *  the caller degrades to the plain-text textarea path. */
+function prepareDomCopy(el: ContentNodeLike): void {
+  const sel = window.getSelection();
+  if (!sel) throw new Error("selection unavailable");
+  sel.removeAllRanges();
+  sel.selectAllChildren(el as unknown as Node);
+}
+
 export default function App() {
   const [source, setSource] = useState("");
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
@@ -199,6 +209,7 @@ export default function App() {
       typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
       document,
       () => document.execCommand("copy"),
+      prepareDomCopy,
     );
     const ok =
       dom !== false
@@ -258,6 +269,7 @@ export default function App() {
       typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
       document,
       () => document.execCommand("copy"),
+      prepareDomCopy,
     );
     const outputHtml = keyedHtml ?? (/<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null);
     const plain = outputHtml ? htmlToPlainText(output) : output;
