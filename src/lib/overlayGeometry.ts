@@ -1,20 +1,21 @@
 /**
  * Pure overlay positioning helpers (tested; used by the injected host
- * controller). The overlay matches the composer's exact width and anchors
- * directly above or below it, flipping when space requires.
+ * controller). The overlay opens small near the composer, grows with the
+ * rewritten text, and scales to a centered near-fullscreen card past a
+ * third of the viewport. No modal mode: the page stays interactive.
  */
 
 export const OVERLAY_PADDING = 8;
 /** Document padding inside the overlay iframe (shadow/glow room). */
 export const IFRAME_MARGIN = 12;
-/** Centered modal card width (fixed, independent of composer width). */
-export const MODAL_CARD_WIDTH = 800;
+/** Fullscreen card width (fixed, viewport-clamped). */
+export const FULLSCREEN_CARD_WIDTH = 880;
+/** Viewport margin around the fullscreen card. */
+export const FULLSCREEN_MARGIN = 16;
 /** Compact pre-content card width: the loader opens small even on wide composers. */
 export const COMPACT_CARD_WIDTH = 480;
-/** Unanchored float panel shares the detached 800px width. */
-export const FLOAT_CARD_WIDTH = MODAL_CARD_WIDTH;
-/** Fraction of the viewport height bounding the centered modal panel. */
-export const MODAL_PANEL_FRACTION = 0.8;
+/** Unanchored float panel shares a fixed detached width. */
+export const FLOAT_CARD_WIDTH = 800;
 
 export interface ViewportSize {
   width: number;
@@ -28,7 +29,7 @@ export interface AnchorRect {
   width: number;
 }
 
-export type OverlayPlacement = "above" | "below" | "float" | "center";
+export type OverlayPlacement = "above" | "below" | "float" | "fullscreen";
 
 export interface OverlayGeometry {
   /** Iframe width: card width plus document margin on both sides. */
@@ -39,6 +40,8 @@ export interface OverlayGeometry {
   left: number;
   /** Card top edge (viewport coords). */
   top: number;
+  /** Card height for fullscreen (null = host sizes the iframe to content). */
+  cardHeight: number | null;
   placement: OverlayPlacement;
 }
 
@@ -48,17 +51,20 @@ export function resolveOverlayGeometry(
   height: number,
   compact = false,
 ): OverlayGeometry {
-  // Centered modal fallback: content taller than a third of the viewport
-  // leaves too little room for a useful anchored panel. Detach into a
-  // dimmed, centered modal instead of squeezing above/below the composer.
-  if (shouldUseCenterModal(viewport, height)) {
-    const cardWidth = Math.min(MODAL_CARD_WIDTH, viewport.width - OVERLAY_PADDING * 2);
+  // Near-fullscreen fallback: content taller than a third of the viewport
+  // can no longer sit beside the composer. Scale the same card up to a
+  // centered near-fullscreen surface (shrink-wrapped iframe, no backdrop,
+  // page stays interactive) instead of squeezing above/below.
+  if (shouldUseFullscreen(viewport, height)) {
+    const cardWidth = Math.min(FULLSCREEN_CARD_WIDTH, viewport.width - FULLSCREEN_MARGIN * 2);
+    const cardHeight = Math.min(height, viewport.height - FULLSCREEN_MARGIN * 2);
     return {
-      frameWidth: viewport.width,
+      frameWidth: cardWidth + IFRAME_MARGIN * 2,
       cardWidth,
-      left: 0,
-      top: 0,
-      placement: "center",
+      left: Math.max(OVERLAY_PADDING, Math.round((viewport.width - cardWidth) / 2)),
+      top: Math.max(OVERLAY_PADDING, Math.round((viewport.height - cardHeight) / 2)),
+      cardHeight,
+      placement: "fullscreen",
     };
   }
   if (!anchor || anchor.width <= 0) {
@@ -69,6 +75,7 @@ export function resolveOverlayGeometry(
       cardWidth,
       left: Math.max(OVERLAY_PADDING, Math.round((viewport.width - cardWidth) / 2)),
       top: Math.max(OVERLAY_PADDING, Math.round(viewport.height * 0.2)),
+      cardHeight: null,
       placement: "float",
     };
   }
@@ -86,62 +93,13 @@ export function resolveOverlayGeometry(
   const fitsBelow = below + height <= viewport.height;
   const placement: OverlayPlacement = fitsBelow || above < OVERLAY_PADDING ? "below" : "above";
   const top = placement === "below" ? below : Math.max(above, OVERLAY_PADDING);
-  return { frameWidth, cardWidth, left, top, placement };
+  return { frameWidth, cardWidth, left, top, cardHeight: null, placement };
 }
 
 /** True when panel content exceeds a third of the viewport height. */
-export function shouldUseCenterModal(viewport: ViewportSize, height: number): boolean {
+export function shouldUseFullscreen(viewport: ViewportSize, height: number): boolean {
   if (viewport.height <= 0) return false;
   return height > viewport.height / 3;
-}
-
-/**
- * Pre-prompt panel height estimate from the captured input, so the
- * modal-vs-overlay decision happens before the rewrite streams back.
- *
- * Rows come from explicit line breaks wrapped at the card's usable width;
- * formatted (HTML) input costs one extra row of block overhead. One spare
- * row biases borderline inputs toward the modal, which degrades gracefully
- * (centered, scrollable) while a squeezed anchored panel does not.
- */
-export const PANEL_CHROME_HEIGHT = 150;
-export const RESULT_LINE_HEIGHT = 25;
-const AVG_CHAR_WIDTH = 7;
-const CONTENT_GUTTER = 32;
-
-export function estimatePanelHeight(text: string, cardWidth: number, hasFormatting = false): number {
-  const usable = Math.max(160, cardWidth - CONTENT_GUTTER);
-  const charsPerLine = Math.max(20, Math.floor(usable / AVG_CHAR_WIDTH));
-  let rows = 0;
-  for (const line of text.split("\n")) {
-    rows += Math.max(1, Math.ceil(line.length / charsPerLine));
-  }
-  rows += 1; // spare row: borderline inputs prefer the modal
-  if (hasFormatting) rows += 1; // block-tag overhead
-  return PANEL_CHROME_HEIGHT + rows * RESULT_LINE_HEIGHT;
-}
-
-/**
- * Pre-prompt modal decision: true when the estimated panel exceeds a third
- * of the viewport or fits on neither side of the anchor. Null anchor
- * (float) is judged by the viewport rule only. The anchored side itself
- * stays with resolveOverlayGeometry at runtime; this only pins the modal
- * early so the first paint is already centered. One-way: a false here
- * still allows the streaming resize path to trip the modal later.
- */
-export function shouldPrePromptModal(
-  viewport: ViewportSize,
-  anchor: AnchorRect | null,
-  text: string,
-  cardWidth: number,
-  hasFormatting = false,
-): boolean {
-  const estimate = estimatePanelHeight(text, cardWidth, hasFormatting);
-  if (shouldUseCenterModal(viewport, estimate)) return true;
-  if (!anchor || anchor.width <= 0) return false;
-  const spaceAbove = anchor.top - OVERLAY_PADDING;
-  const spaceBelow = viewport.height - anchor.bottom - OVERLAY_PADDING;
-  return estimate > spaceAbove && estimate > spaceBelow;
 }
 
 /** Floor keeping the result box usable when space is tight. */
@@ -158,10 +116,10 @@ export function resolveMaxPanelHeight(
   anchor: AnchorRect | null,
   placement: OverlayPlacement,
 ): number | null {
-  // Centered modal budget: a viewport fraction, independent of the anchor.
-  // The card is detached, so free space above/below no longer applies.
-  if (placement === "center") {
-    return Math.max(MIN_CONTENT_HEIGHT, Math.floor(viewport.height * MODAL_PANEL_FRACTION));
+  // Fullscreen budget: viewport minus margin, independent of the anchor.
+  // Content scrolls inside; header/footer stay pinned.
+  if (placement === "fullscreen") {
+    return Math.max(MIN_CONTENT_HEIGHT, viewport.height - FULLSCREEN_MARGIN * 2);
   }
   if (!anchor || anchor.width <= 0 || placement === "float") return null;
   if (placement === "below") {
