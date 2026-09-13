@@ -168,6 +168,7 @@ writeflo/
 ### postMessage contract (overlay → parent)
 - `{ type: 'resize', height }` on mount and whenever panel content height changes (ResizeObserver).
 - `{ type: 'insert', text }` on commit (Enter on content box).
+- `{ type: 'insertLexical', map, text }` on commit when the host supplied Lexical nodes (keyed rewrite; `text` is the plain fallback).
 - `{ type: 'close' }` on Escape, after insert confirmation, or on settings→back.
 
 ---
