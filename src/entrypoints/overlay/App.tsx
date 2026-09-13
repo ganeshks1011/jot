@@ -26,7 +26,7 @@ import {
   postResize,
   postToParent,
 } from "./lib/bridge";
-import { copyHtml } from "./lib/clipboard";
+import { copyDomHtml, copyHtml, type ContentNodeLike } from "./lib/clipboard";
 import { buildKeyedHtml } from "./lib/keyedHtml";
 import { type FocusZone, selectHelperText, zoneForTarget } from "./lib/helperText";
 import { startReadyRetry } from "./lib/readyRetry";
@@ -193,13 +193,23 @@ export default function App() {
 
   const copyFailedText = useCallback(async () => {
     if (!failedText) return;
-    const ok = await copyHtml(
-      failedHtml ?? keyedHtml,
-      failedText,
+    // Prefer the live preview DOM verbatim; fall back to state-derived HTML.
+    const dom = await copyDomHtml(
+      () => document.getElementById("jot-content") as ContentNodeLike | null,
       typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
       document,
       () => document.execCommand("copy"),
     );
+    const ok =
+      dom !== false
+        ? true
+        : await copyHtml(
+            failedHtml ?? keyedHtml,
+            failedText,
+            typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
+            document,
+            () => document.execCommand("copy"),
+          );
     setCopied(ok);
     if (ok) {
       void track("rewrite_copied", {
@@ -239,21 +249,30 @@ export default function App() {
 
   const copyOutput = useCallback(async () => {
     if (!output) return;
-    // Clipboard takes both flavors whenever HTML is available: the keyed
-    // preview build first, else tags carried by the output itself. Rich
+    // Prefer the live preview DOM verbatim; fall back to state-derived HTML
+    // (keyed build first, else tags carried by the output itself). Rich
     // editors paste HTML, plain fields take the block-aware plain
     // conversion (tags dropped).
-    const outputHtml = keyedHtml ?? (/<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null);
-    const plain = outputHtml ? htmlToPlainText(output) : output;
-    // Clipboard may be denied by the page's permissions policy (e.g. Google
-    // Chat). Degrade to a notice, never block the insert path.
-    const ok = await copyHtml(
-      outputHtml,
-      plain,
+    const dom = await copyDomHtml(
+      () => document.getElementById("jot-content") as ContentNodeLike | null,
       typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
       document,
       () => document.execCommand("copy"),
     );
+    const outputHtml = keyedHtml ?? (/<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null);
+    const plain = outputHtml ? htmlToPlainText(output) : output;
+    // Clipboard may be denied by the page's permissions policy (e.g. Google
+    // Chat). Degrade to a notice, never block the insert path.
+    const ok =
+      dom !== false
+        ? true
+        : await copyHtml(
+            outputHtml,
+            plain,
+            typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
+            document,
+            () => document.execCommand("copy"),
+          );
     setCopiedHint(ok ? "copied" : "unavailable");
     if (ok) {
       void track("rewrite_copied", {

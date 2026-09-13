@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { copyHtml, copyText } from "./clipboard";
+import { copyDomHtml, copyHtml, copyText, type ContentNodeLike } from "./clipboard";
 
 function doc(): { doc: Document; area: { value: string; select: () => void; remove: () => void } } {
   const area = { value: "", select: vi.fn(), remove: vi.fn() };
@@ -93,6 +93,85 @@ describe("copyHtml", () => {
     try {
       expect(await copyHtml("<b>hi</b>", "hi", { writeText, write })).toBe(true);
       expect(writeText).toHaveBeenCalledWith("hi");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("copyDomHtml", () => {
+  const divNode = (innerHTML: string, innerText: string): ContentNodeLike => ({
+    tagName: "DIV",
+    innerHTML,
+    innerText,
+  });
+
+  it("copies the preview DOM verbatim with both flavors", async () => {
+    const write = vi.fn(async () => {});
+    const seen: Array<{ type: string; text: string }> = [];
+    vi.stubGlobal(
+      "ClipboardItem",
+      class {
+        types: string[];
+        constructor(private data: Record<string, Blob>) {
+          this.types = Object.keys(data);
+        }
+        async getType(type: string) {
+          const blob = this.data[type];
+          if (!blob) throw new Error("missing flavor");
+          seen.push({ type, text: await blob.text() });
+          return blob;
+        }
+      },
+    );
+    try {
+      const html = "<p>Hi</p><ul><li>uno</li></ul>";
+      const el = divNode(html, "Hi\nuno");
+      expect(await copyDomHtml(() => el, { writeText: vi.fn(), write })).toBe("html");
+      expect(write).toHaveBeenCalledTimes(1);
+      const firstCall = write.mock.calls[0] as unknown[] | undefined;
+      const items = (firstCall as unknown[])[0] as unknown[];
+      const item = items[0] as unknown as {
+        types: string[];
+        getType: (t: string) => Promise<Blob>;
+      };
+      expect([...item.types].sort()).toEqual(["text/html", "text/plain"]);
+      await item.getType("text/html");
+      await item.getType("text/plain");
+      expect(seen).toContainEqual({ type: "text/html", text: html });
+      expect(seen).toContainEqual({ type: "text/plain", text: "Hi\nuno" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("copies textarea values as plain text", async () => {
+    const writeText = vi.fn(async () => {});
+    const el: ContentNodeLike = { tagName: "textarea", innerHTML: "", innerText: "", value: "plain" };
+    expect(await copyDomHtml(() => el, { writeText })).toBe("plain");
+    expect(writeText).toHaveBeenCalledWith("plain");
+  });
+
+  it("returns false with no usable node", async () => {
+    expect(await copyDomHtml(() => null, { writeText: vi.fn() })).toBe(false);
+    expect(await copyDomHtml(() => divNode("   ", "x"), { writeText: vi.fn() })).toBe(false);
+    expect(
+      await copyDomHtml(() => {
+        throw new Error("no DOM");
+      }, { writeText: vi.fn() }),
+    ).toBe(false);
+  });
+
+  it("falls back to plain rendered text when flavors reject", async () => {
+    const writeText = vi.fn(async () => {});
+    const write = vi.fn(async () => {
+      throw new Error("denied");
+    });
+    vi.stubGlobal("ClipboardItem", class {});
+    try {
+      const el = divNode("<p>Hi</p>", "Hi");
+      expect(await copyDomHtml(() => el, { writeText, write })).toBe("plain");
+      expect(writeText).toHaveBeenCalledWith("Hi");
     } finally {
       vi.unstubAllGlobals();
     }

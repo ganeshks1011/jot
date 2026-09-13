@@ -79,3 +79,55 @@ export async function copyHtml(
     execCopy,
   );
 }
+
+/** Minimal structural surface of a readable content node (DOM + fakes). */
+export interface ContentNodeLike {
+  readonly tagName: string;
+  readonly innerHTML: string;
+  readonly innerText: string;
+  readonly value?: string;
+}
+
+/**
+ * Copy the live `#jot-content` preview DOM verbatim: the preview div's
+ * inner HTML plus its rendered text, with no sanitize or rebuild pass.
+ * (Render already sanitizes on the way in, so the DOM holds nothing
+ * unsanitized.) Textareas copy their value as plain text. Returns which
+ * path succeeded, or false when no usable node exists (caller falls back
+ * to its state-derived copy; never throws for missing DOM).
+ */
+export async function copyDomHtml(
+  getEl: () => ContentNodeLike | null,
+  clipboard?: ClipboardLike | null,
+  doc?: Document | null,
+  execCopy?: (() => boolean) | null,
+): Promise<"html" | "plain" | false> {
+  let el: ContentNodeLike | null;
+  try {
+    el = getEl();
+  } catch {
+    return false;
+  }
+  if (!el) return false;
+  if (el.tagName.toUpperCase() === "TEXTAREA") {
+    const ok = await copyText(el.value ?? "", clipboard, doc, execCopy);
+    return ok ? "plain" : false;
+  }
+  if (!el.innerHTML.trim()) return false;
+  const writer = flavoredWriter(clipboard);
+  if (writer) {
+    try {
+      await writer([
+        new ClipboardItem({
+          "text/html": new Blob([el.innerHTML], { type: "text/html" }),
+          "text/plain": new Blob([el.innerText], { type: "text/plain" }),
+        }),
+      ]);
+      return "html";
+    } catch {
+      // Fall through to plain-only copy below.
+    }
+  }
+  const ok = await copyText(el.innerText, clipboard, doc, execCopy);
+  return ok ? "plain" : false;
+}
