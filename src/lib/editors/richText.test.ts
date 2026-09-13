@@ -46,6 +46,7 @@ function deps(
         calls.push("selectAll");
         expect(node).toBe(composer);
       },
+      selectionText: () => composer?.innerText ?? null,
     }),
     execCommand: (command: string, _showUI: boolean, value: string) => {
       calls.push(`exec:${command}:${value}`);
@@ -60,6 +61,7 @@ function deps(
       calls.push(`beforeinput:${text}`);
       return {} as Event;
     },
+    waitForFlush: async () => {},
     closestFromField: fieldClosest,
     closestFromFocused: null,
     ...overrides,
@@ -106,20 +108,48 @@ describe("resolveFrameworkRoot", () => {
 });
 
 describe("replaceRichText", () => {
-  it("writes via editing input and verifies", () => {
+  it("writes via editing input and verifies", async () => {
     const { root, closest } = markedRoot("lexical", { innerText: "hello world" });
     const d = deps({ field: root, closestFromField: closest });
-    const result = replaceRichText("hello brave world", d);
+    const result = await replaceRichText("hello brave world", d);
     expect(result.ok).toBe(true);
     expect(d.calls).toContain("selectAll");
     expect(d.calls).toContain("exec:insertText:hello brave world");
     expect(d.calls).toContain("inputEvent");
+    // No synthetic beforeinput: execCommand already fires a real one, and
+    // stacking both double-applies the text in Lexical.
+    expect(d.calls.filter((c) => c.startsWith("beforeinput:"))).toHaveLength(0);
   });
 
-  it("reports text-free diagnostics on success", () => {
+  it("verifies after the framework flush, not synchronously", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    let pending: string | null = null;
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand: (command: string, _showUI: boolean, value: string) => {
+        if (command === "insertText") {
+          pending = value; // Lexical batches the commit; DOM updates on flush.
+          return true;
+        }
+        return false;
+      },
+      waitForFlush: async () => {
+        if (pending != null) {
+          root.innerText = pending;
+          pending = null;
+        }
+      },
+    });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.attempts).toBe(1);
+  });
+
+  it("reports text-free diagnostics on success", async () => {
     const { root, closest } = markedRoot("prosemirror", { innerText: "old" });
     const d = deps({ field: root, closestFromField: closest });
-    const result = replaceRichText("new text", d);
+    const result = await replaceRichText("new text", d);
     expect(result.ok).toBe(true);
     expect(result.diagnostics.strategy).toBe("exec");
     expect(result.diagnostics.tag).toBe("DIV");
@@ -128,7 +158,7 @@ describe("replaceRichText", () => {
     expect(JSON.stringify(result.diagnostics)).not.toContain("new text");
   });
 
-  it("falls back to line-by-line insert when whole-text exec fails", () => {
+  it("falls back to line-by-line insert when whole-text exec fails", async () => {
     const { root, closest } = markedRoot("prosemirror", { innerText: "old" });
     const lines: string[] = [];
     const d = deps({
@@ -146,21 +176,77 @@ describe("replaceRichText", () => {
         return false;
       },
     });
-    const result = replaceRichText("one\ntwo", d);
+    const result = await replaceRichText("one\ntwo", d);
     expect(result.ok).toBe(true);
     expect(root.innerText).toBe("one\ntwo");
   });
 
-  it("reports diagnostics on failure without leaking text", () => {
+  it("skips writes when focus did not land in the editor", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const other = element({ tagName: "BODY", isContentEditable: false });
+    const execCommand = vi.fn(() => true);
+    const d = deps({ field: root, focused: other, closestFromField: closest, execCommand });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(false);
+    expect(execCommand).not.toHaveBeenCalled();
+    expect(result.diagnostics.attempts).toBe(0);
+    expect(root.innerText).toBe("old");
+  });
+
+  it("skips exec when the selection does not cover the editor", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "full text here" });
+    const execCommand = vi.fn(() => true);
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand,
+      getSelection: () => ({
+        selectAllChildren: () => {},
+        selectionText: () => "partial", // collapsed/partial: would append
+      }),
+    });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(false);
+    expect(execCommand).not.toHaveBeenCalled();
+    expect(root.innerText).toBe("full text here");
+  });
+
+  it("aborts further writes once duplication is detected", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const execCommand = vi.fn((_command: string, _showUI: boolean, value: string) => {
+      root.innerText = `${root.innerText}${value}${value}`; // double-apply in one op
+      return true;
+    });
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.strategy).toBeNull();
+    // One op applied twice, then the breaker trips — never nine copies.
+    expect(root.innerText).toBe("oldnew textnew text");
+    expect(execCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports diagnostics on failure without leaking text", async () => {
     const { root, closest } = markedRoot("quill", { innerText: "old content" });
     const execCommand = vi.fn(() => true); // claims success, changes nothing
     const d = deps({ field: root, closestFromField: closest, execCommand });
-    const result = replaceRichText("new text", d);
+    const result = await replaceRichText("new text", d);
     expect(result.ok).toBe(false);
     expect(result.diagnostics.strategy).toBeNull();
     expect(result.diagnostics.preLen).toBe("old content".length);
     expect(result.diagnostics.attempts).toBe(3);
     expect(JSON.stringify(result.diagnostics)).not.toContain("new text");
+  });
+
+  it("retries and reports failure when verification fails", async () => {
+    const { root, closest } = markedRoot("quill", { innerText: "old content" });
+    const execCommand = vi.fn(() => true); // claims success, changes nothing
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText("new text", d);
+    expect(result.ok).toBe(false);
+    // Whole-text + multiline exec per attempt across 3 attempts.
+    expect(execCommand).toHaveBeenCalledTimes(6);
+    expect(result.readBack).toBe("old content");
   });
 });
 

@@ -757,14 +757,15 @@ function createHost(): HostController {
    * Non-Slack behavior is unchanged (always treated as success).
    * `html` is the sanitized preserve-only fragment; textarea/input always
    * take plain `text`, contenteditables prefer HTML when present.
+   * Async: the framework-editor path awaits frame flushes before verifying.
    */
-  function insertText(
+  async function insertText(
     text: string,
     html?: string | null,
-  ): {
+  ): Promise<{
     ok: boolean;
     diagnostics?: SlackWriteDiagnostics;
-  } {
+  }> {
     // Slack re-renders its composer and only accepts real editing input.
     // Isolated in @/lib/editors/slack so generic behavior never changes.
     if (isSlackComposer(window.location.hostname)) {
@@ -783,7 +784,7 @@ function createHost(): HostController {
     // surgery is silently reverted. Verified editing input instead.
     const richTextDeps = liveRichTextDeps(document, window, activeField);
     if (resolveFrameworkRoot(richTextDeps)) {
-      const result = replaceRichText(text, richTextDeps);
+      const result = await replaceRichText(text, richTextDeps);
       if (result.ok) capturedRange = null;
       return { ok: result.ok, diagnostics: result.diagnostics };
     }
@@ -907,7 +908,7 @@ function createHost(): HostController {
   // postMessage contract (overlay <-> this controller)
   // ---------------------------------------------------------------------------
 
-  function handleOverlayMessage(event: MessageEvent): void {
+  async function handleOverlayMessage(event: MessageEvent): Promise<void> {
     // Validate by origin: only documents served from this extension's own
     // chrome-extension:// origin can post overlay events. Derive the expected
     // origin from `runtime.id` (NOT by parsing `runtime.getURL()` - the URL
@@ -951,7 +952,7 @@ function createHost(): HostController {
             // Verified write; on failure the panel stays open so the user
             // can copy the rewrite instead of silently losing it.
             // Slack composers take plain text (pills rebuilt from labels).
-            const outcome = insertText(msg.text);
+            const outcome = await insertText(msg.text);
             if (outcome.diagnostics) {
               postInsertResult(outcome.ok, outcome.diagnostics);
             }
@@ -963,7 +964,7 @@ function createHost(): HostController {
           if (resolveFrameworkRoot(richTextDeps)) {
             // Same verified-write contract as Slack: framework editors get
             // plain text and the panel stays open on failure.
-            const outcome = insertText(msg.text);
+            const outcome = await insertText(msg.text);
             if (outcome.diagnostics) {
               postInsertResult(outcome.ok, outcome.diagnostics);
             }
@@ -971,7 +972,7 @@ function createHost(): HostController {
             else postInsertFailed(msg.text, outcome.diagnostics);
             break;
           }
-          insertText(msg.text, html);
+          await insertText(msg.text, html);
         }
         closePanel();
         break;
