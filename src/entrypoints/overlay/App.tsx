@@ -524,17 +524,20 @@ export default function App() {
   }, [insertText, runGenerate, close, inputText, source, output, copyOutput]);
 
   // Report the panel height to the parent whenever content changes size.
+  // Compact until rewritten text lands, so wide composers open small.
   useEffect(() => {
-    postResize();
+    postResize(!output);
   }, [status, output, inserted, error]);
 
+  const compactRef = useRef(true);
+  compactRef.current = !output;
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const observer = new ResizeObserver(() => postResize());
+    const observer = new ResizeObserver(() => postResize(compactRef.current));
     observer.observe(root);
-    const initial = setTimeout(postResize, 100);
-    const late = setTimeout(postResize, 450);
+    const initial = setTimeout(() => postResize(compactRef.current), 100);
+    const late = setTimeout(() => postResize(compactRef.current), 450);
     return () => {
       observer.disconnect();
       clearTimeout(initial);

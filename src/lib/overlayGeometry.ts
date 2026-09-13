@@ -9,6 +9,8 @@ export const OVERLAY_PADDING = 8;
 export const IFRAME_MARGIN = 12;
 /** Centered modal card width (fixed, independent of composer width). */
 export const MODAL_CARD_WIDTH = 800;
+/** Compact pre-content card width: the loader opens small even on wide composers. */
+export const COMPACT_CARD_WIDTH = 480;
 /** Unanchored float panel shares the detached 800px width. */
 export const FLOAT_CARD_WIDTH = MODAL_CARD_WIDTH;
 /** Fraction of the viewport height bounding the centered modal panel. */
@@ -44,6 +46,7 @@ export function resolveOverlayGeometry(
   viewport: ViewportSize,
   anchor: AnchorRect | null,
   height: number,
+  compact = false,
 ): OverlayGeometry {
   // Centered modal fallback: content taller than a third of the viewport
   // leaves too little room for a useful anchored panel. Detach into a
@@ -70,9 +73,12 @@ export function resolveOverlayGeometry(
     };
   }
 
-  const cardWidth = anchor.width;
+  const cardWidth = compact ? Math.min(anchor.width, COMPACT_CARD_WIDTH) : anchor.width;
   const frameWidth = cardWidth + IFRAME_MARGIN * 2;
-  const left = Math.max(OVERLAY_PADDING, Math.min(anchor.left, viewport.width - cardWidth - OVERLAY_PADDING));
+  // Full-width cards align to the composer edge; compact cards center on
+  // the anchor box so the loader hugs the field instead of spanning it.
+  const anchorLeft = compact ? anchor.left + (anchor.width - cardWidth) / 2 : anchor.left;
+  const left = Math.max(OVERLAY_PADDING, Math.min(anchorLeft, viewport.width - cardWidth - OVERLAY_PADDING));
   // Zero gap: the card edge touches the composer edge so the two read as one
   // connected surface (the connector diamond straddles the seam).
   const below = anchor.bottom;

@@ -324,13 +324,17 @@ function createHost(): HostController {
   // Card-relative x of the connector diamond (null = hidden). Recomputed
   // with every placement so it tracks the anchor box, not the card center.
   let lastConnectorX: number | null = null;
+  // Compact pre-content width. Panels start compact; the overlay reports
+  // false with its first content resize. Remembered so scroll repositions
+  // keep the current width instead of jumping prematurely.
+  let lastCompact = true;
 
-  function positionIframe(height: number): void {
+  function positionIframe(height: number, compact = false): void {
     if (!iframe) return;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const anchor = snapshotAnchor();
     // Pinned modal forces center geometry by presenting a full-height panel.
-    const g = resolveOverlayGeometry(viewport, anchor, modalPinned ? viewport.height : height);
+    const g = resolveOverlayGeometry(viewport, anchor, modalPinned ? viewport.height : height, compact);
     if (g.placement === "center") modalPinned = true;
     lastPlacement = g.placement;
     lastMaxPanelHeight = resolveMaxPanelHeight(viewport, anchor, g.placement);
@@ -567,7 +571,7 @@ function createHost(): HostController {
   function handleReposition(): void {
     if (!iframe || !panelVisible) return;
     const height = Math.max(160, Number.parseInt(iframe.style.height, 10) || 0);
-    positionIframe(height);
+    positionIframe(height, lastCompact);
   }
 
   /** Move keyboard focus into the overlay so Enter/Tab/arrows drive Jot,
@@ -591,6 +595,7 @@ function createHost(): HostController {
     frame.style.opacity = "1";
     panelVisible = true;
     modalPinned = false;
+    lastCompact = true;
     lastConnectorX = null;
     attachReposition();
     observeField();
@@ -607,7 +612,7 @@ function createHost(): HostController {
     if (shouldPrePromptModal(viewport, anchor, capturedText, estimateWidth, capturedHasFormatting)) {
       modalPinned = true;
     }
-    positionIframe(modalPinned ? viewport.height : 160);
+    positionIframe(modalPinned ? viewport.height : 160, true);
     enableSmoothResize(frame);
 
     // Fast path: send init once the frame has loaded. The overlay also sends
@@ -947,7 +952,13 @@ function createHost(): HostController {
     if (event.origin !== expectedOrigin) return;
     if (event.source === window) return; // ignore self-posted messages
 
-    const msg = event.data as { type?: string; text?: string; html?: string | null; height?: number } | null;
+    const msg = event.data as {
+      type?: string;
+      text?: string;
+      html?: string | null;
+      height?: number;
+      compact?: boolean | null;
+    } | null;
     if (!msg || typeof msg !== "object") return;
 
     switch (msg.type) {
@@ -962,14 +973,15 @@ function createHost(): HostController {
       }
       case "resize": {
         if (!iframe) break;
+        lastCompact = msg.compact ?? false;
         // Let placement decide first: content past a third of the viewport
         // switches to (and pins) the fullscreen center modal. Anchored panels
         // keep the content-driven height as before.
-        positionIframe(msg.height ?? 0);
+        positionIframe(msg.height ?? 0, lastCompact);
         if (lastPlacement === "center") break;
         const height = Math.min(msg.height ?? 0, window.innerHeight - 24);
         iframe.style.height = `${Math.max(160, height)}px`;
-        positionIframe(height);
+        positionIframe(height, lastCompact);
         break;
       }
       case "insert": {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  COMPACT_CARD_WIDTH,
   estimatePanelHeight,
   FLOAT_CARD_WIDTH,
   isDarkBackground,
@@ -49,6 +50,25 @@ describe("resolveOverlayGeometry", () => {
   it("stays anchored at exactly a viewport third", () => {
     const g = resolveOverlayGeometry(viewport, { left: 200, top: 300, bottom: 340, width: 560 }, 300);
     expect(g.placement).toBe("below");
+  });
+
+  it("opens compact centered on wide composers", () => {
+    const g = resolveOverlayGeometry(viewport, { left: 200, top: 300, bottom: 340, width: 900 }, 120, true);
+    expect(g.cardWidth).toBe(COMPACT_CARD_WIDTH);
+    expect(g.left).toBe(200 + (900 - COMPACT_CARD_WIDTH) / 2);
+    expect(g.placement).toBe("below");
+  });
+
+  it("never widens narrow fields in compact mode", () => {
+    const g = resolveOverlayGeometry(viewport, { left: 200, top: 300, bottom: 340, width: 300 }, 120, true);
+    expect(g.cardWidth).toBe(300);
+    expect(g.left).toBe(200);
+  });
+
+  it("clamps compact cards at the viewport edge", () => {
+    const g = resolveOverlayGeometry(viewport, { left: 1100, top: 300, bottom: 340, width: 500 }, 120, true);
+    expect(g.cardWidth).toBe(COMPACT_CARD_WIDTH);
+    expect(g.left).toBe(1440 - COMPACT_CARD_WIDTH - 8);
   });
 
   it("centers tall content even when neither side fits", () => {
