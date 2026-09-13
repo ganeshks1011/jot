@@ -96,3 +96,16 @@
     transition: none;
   }
 }
+
+/* Scroll-journey snap: applied to the document root while the landing is
+   mounted (it must live on the scroll container). Proximity only — free
+   scroll is never trapped. Disabled under reduced motion. */
+.jot-snap {
+  scroll-snap-type: y proximity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jot-snap {
+    scroll-snap-type: none;
+  }
+}
