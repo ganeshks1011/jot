@@ -65,7 +65,6 @@ const openUpgradePage = (upgrade: ProviderError["upgrade"]) => {
 export default function App() {
   const [source, setSource] = useState("");
   const [sourceHtml, setSourceHtml] = useState<string | null>(null);
-  const [hasFormatting, setHasFormatting] = useState(false);
   const [inputText, setInputText] = useState("");
   const [inserted, setInserted] = useState(false);
   // Rewrite the host rejected (e.g. Slack composer). Panel stays open so the
@@ -231,9 +230,10 @@ export default function App() {
 
   const copyOutput = useCallback(async () => {
     if (!output) return;
-    // Clipboard takes both flavors when formatted: rich editors paste HTML,
-    // plain fields take the block-aware plain conversion (tags dropped).
-    const outputHtml = hasFormatting && /<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null;
+    // Clipboard takes both flavors whenever the output carries tags: rich
+    // editors paste HTML, plain fields take the block-aware plain
+    // conversion (tags dropped).
+    const outputHtml = /<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null;
     const plain = outputHtml ? htmlToPlainText(output) : output;
     // Clipboard may be denied by the page's permissions policy (e.g. Google
     // Chat). Degrade to a notice, never block the insert path.
@@ -253,7 +253,7 @@ export default function App() {
     }
     if (copiedHintTimer.current) clearTimeout(copiedHintTimer.current);
     copiedHintTimer.current = setTimeout(() => setCopiedHint(null), 2000);
-  }, [output, hasFormatting]);
+  }, [output]);
 
   // Move keyboard focus into the overlay on open so arrows/Enter work
   // immediately (the host focuses the frame; cross-origin-safe). Focus lands
@@ -329,7 +329,7 @@ export default function App() {
     const chrome = card.scrollHeight - content.scrollHeight;
     const cap = Math.max(MIN_CONTENT_HEIGHT, maxPanelHeight - chrome);
     card.style.setProperty("--jot-content-max", `${Math.round(cap)}px`);
-  }, [maxPanelHeight, output, status, hasFormatting]);
+  }, [maxPanelHeight, output, status]);
 
   // Paint audit: computed backgrounds after first paint, to diagnose
   // background pairing issues. Theme values only, never content.
@@ -416,7 +416,6 @@ export default function App() {
       editorRef.current = editorTypeFor(msg.fieldType);
       setSource(text);
       setSourceHtml(formatted ? html : null);
-      setHasFormatting(formatted);
       const keyed = msg.lexicalNodes && msg.lexicalNodes.length > 0 ? msg.lexicalNodes : null;
       nodesRef.current = keyed;
       mapRef.current = null;
@@ -513,8 +512,9 @@ export default function App() {
       }
       // Formatted output travels as both: plain text for textarea/Slack and
       // the sanitized HTML fragment for rich contenteditables. The host picks
-      // per target; text-only hosts ignore `html` entirely.
-      const outputHtml = hasFormatting && /<[a-zA-Z]/.test(text) ? sanitizeRichHtml(text) : null;
+      // per target; text-only hosts ignore `html` entirely. Keyed off the
+      // text content so preview, copy, and insert always agree.
+      const outputHtml = /<[a-zA-Z]/.test(text) ? sanitizeRichHtml(text) : null;
       const plain = outputHtml ? htmlToPlainText(text) : text;
       postToParent({ type: "insert", text: plain, html: outputHtml });
       setInserted(true);
@@ -542,7 +542,7 @@ export default function App() {
         postToParent({ type: "close" });
       }, 700);
     },
-    [hasFormatting],
+    [],
   );
 
   // Abort any in-flight stream when the overlay unmounts.
@@ -806,7 +806,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <ContentBox output={output} status={status} hasFormatting={hasFormatting} />
+          <ContentBox output={output} status={status} />
         )}
         {(() => {
           const kind = selectHelperText({

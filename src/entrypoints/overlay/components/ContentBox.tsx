@@ -7,11 +7,9 @@ export type ContentStatus = "idle" | "generating" | "output";
 interface ContentBoxProps {
   output: string;
   status: ContentStatus;
-  /** True when the capture carried formatting worth previewing as HTML. */
-  hasFormatting?: boolean;
 }
 
-export function ContentBox({ output, status, hasFormatting }: ContentBoxProps) {
+export function ContentBox({ output, status }: ContentBoxProps) {
   // Skeletons only until the first streamed tokens land; after that the
   // partial text renders live in the read-only box below.
   if (status === "generating" && !output) {
@@ -33,9 +31,11 @@ export function ContentBox({ output, status, hasFormatting }: ContentBoxProps) {
   }
 
   // Preserve-only HTML preview: sanitized allowlist fragment, read-only.
-  // Keeps the jot-content identity so focus, Enter-to-insert, and the
-  // result cap all behave exactly like the plain-text box.
-  if (hasFormatting && /<[a-zA-Z]/.test(output)) {
+  // Keyed off the output content itself (not the capture): whatever tagged
+  // HTML the overlay shows is exactly what copy/insert carry. Keeps the
+  // jot-content identity so focus, Enter-to-insert, and the result cap all
+  // behave exactly like the plain-text box.
+  if (/<[a-zA-Z]/.test(output)) {
     const clean = sanitizeRichHtml(output);
     return (
       <div
