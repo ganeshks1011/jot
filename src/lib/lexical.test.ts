@@ -91,8 +91,8 @@ describe("captureLexical", () => {
     expect(capture?.editor).toBe(editor);
     expect(capture?.state).toBe(state);
     expect(capture?.nodes).toEqual([
-      { id: "0/0", text: "Hello" },
-      { id: "1/0/0", text: "one" },
+      { id: "0/0", text: "Hello", block: "paragraph" },
+      { id: "1/0/0", text: "one", block: "listitem" },
     ]);
   });
 

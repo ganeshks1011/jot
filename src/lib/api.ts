@@ -714,7 +714,7 @@ export async function rewriteLexicalNodes(
     const redacted = redactAll(texts);
     if (redacted.replacements.length > 0) {
       replacements = redacted.replacements;
-      sentNodes = nodes.map((n, i) => ({ id: n.id, text: redacted.texts[i] ?? n.text }));
+      sentNodes = nodes.map((n, i) => ({ id: n.id, text: redacted.texts[i] ?? n.text, block: n.block }));
       if (followUp) sentFollowUp = redacted.texts[nodes.length];
     }
   }

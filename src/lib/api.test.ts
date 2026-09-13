@@ -143,8 +143,8 @@ describe("parseKeyedRewrites", () => {
 
 describe("rewriteLexicalNodes", () => {
   const nodes = [
-    { id: "0/0", text: "Hello world" },
-    { id: "1/0/0", text: "one" },
+    { id: "0/0", text: "Hello world", block: "paragraph" },
+    { id: "1/0/0", text: "one", block: "listitem" },
   ];
 
   beforeEach(async () => {
