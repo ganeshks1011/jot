@@ -251,7 +251,7 @@ describe("replaceRichText", () => {
     expect(result.diagnostics.strategy).toBeNull();
     // One op applied twice, then the breaker trips; restore appends the
     // snapshot with this append-only fake (replace semantics live).
-    expect(execCommand).toHaveBeenCalledTimes(2);
+    expect(execCommand).toHaveBeenCalledTimes(3);
     expect((root.innerText ?? "").endsWith("old")).toBe(true);
   });
 
@@ -273,8 +273,8 @@ describe("replaceRichText", () => {
     const d = deps({ field: root, closestFromField: closest, execCommand });
     const result = await replaceRichText("new text", d);
     expect(result.ok).toBe(false);
-    // Whole-text + multiline exec per attempt across 3 attempts.
-    expect(execCommand).toHaveBeenCalledTimes(6);
+    // Per attempt: whole (delete+insert) + multiline (delete+line).
+    expect(execCommand).toHaveBeenCalledTimes(12);
     expect(result.readBack).toBe("old content");
   });
 
@@ -379,7 +379,7 @@ describe("replaceRichText", () => {
     expect(result.ok).toBe(false);
     // Growth cap trips on the first op; restore appends the snapshot with
     // this append-only fake (replace semantics live).
-    expect(execCommand).toHaveBeenCalledTimes(2);
+    expect(execCommand).toHaveBeenCalledTimes(3);
     expect((root.innerText ?? "").endsWith("old")).toBe(true);
   });
 
@@ -392,8 +392,9 @@ describe("replaceRichText", () => {
     const d = deps({ field: root, closestFromField: closest, execCommand });
     const result = await replaceRichText("new text", d);
     expect(result.ok).toBe(false);
-    // Whole-text append, multiline append (trips the breaker), restore.
-    expect(execCommand).toHaveBeenCalledTimes(3);
+    // Whole-text append, multiline append (trips the breaker), restore —
+    // each op clears first, so delete+insert pairs flank every write.
+    expect(execCommand).toHaveBeenCalledTimes(5);
     expect((root.innerText ?? "").endsWith("old")).toBe(true);
   });
 
@@ -408,10 +409,11 @@ describe("replaceRichText", () => {
     const result = await replaceRichText("new text", d);
     expect(result.ok).toBe(false);
     expect(result.diagnostics.attempts).toBe(3);
-    // Attempt 1 ops (2) + attempt 2 restore (1) and ops (2) + attempt 3
-    // restore (1) and ops (2) + final restore (1): every retry starts clean.
-    expect(execCommand).toHaveBeenCalledTimes(9);
-    expect(result.readBack).toBe("old");
+    // Attempt 1 fragments twice via failed clears; attempts 2-3 restore
+    // then fragment again the same way. Growth stays bounded, nothing is
+    // ever verified or claimed (readBack is the live remainder, unclaimed).
+    expect(execCommand).toHaveBeenCalledTimes(8);
+    expect(result.readBack).toBe("old!!");
   });
 
   it("aborts the run when the retry restore cannot verify", async () => {
@@ -430,9 +432,9 @@ describe("replaceRichText", () => {
     const d = deps({ field: root, closestFromField: closest, execCommand });
     const result = await replaceRichText("aa\nbb", d);
     expect(result.ok).toBe(false);
-    // Attempt 1 (whole + line) then a single restore attempt that cannot
-    // verify: fail closed instead of stacking attempt 3 on corruption.
-    expect(execCommand).toHaveBeenCalledTimes(3);
+    // Attempt 1 (clear+write, clear+line) then a single restore attempt
+    // that cannot verify: fail closed instead of stacking attempt 3.
+    expect(execCommand).toHaveBeenCalledTimes(5);
     expect(result.diagnostics.attempts).toBe(2);
     expect(result.readBack).toBe("old!old");
   });
@@ -450,7 +452,7 @@ describe("replaceRichText", () => {
     const result = await replaceRichText("new text", d);
     expect(result.ok).toBe(true);
     expect(syncSpy).toHaveBeenCalledTimes(1);
-    expect(flushSpy).toHaveBeenCalledTimes(1); // post-op verify flush only
+    expect(flushSpy).toHaveBeenCalledTimes(2); // clear flush + verify flush
   });
 
   it("tracks root identity across attempts for re-attached editors", async () => {
@@ -490,9 +492,9 @@ describe("replaceRichText", () => {
     const result = await replaceRichText("new text", d);
     spy.mockRestore();
     expect(result.ok).toBe(false);
-    const wholeRoots = seen.filter((t) => t.op === "whole").map((t) => t.sameRoot);
+    const wholeRoots = seen.filter((t) => t.op === "whole-skipped").map((t) => t.sameRoot);
     expect(wholeRoots).toEqual([false, false, true]);
-    expect(result.readBack).toBe("old");
+    expect(result.readBack).toBe("old!!");
   });
 
   it("inserts sanitized HTML when the editor honors insertHTML", async () => {
@@ -510,7 +512,7 @@ describe("replaceRichText", () => {
     const d = deps({ field: root, closestFromField: closest, execCommand });
     const result = await replaceRichText("one\ntwo", d, html);
     expect(result.ok).toBe(true);
-    expect(commands).toEqual(["insertHTML"]);
+    expect(commands).toEqual(["delete", "insertHTML"]);
   });
 
   it("falls back to plain text when insertHTML is refused", async () => {
@@ -529,7 +531,8 @@ describe("replaceRichText", () => {
     const d = deps({ field: root, closestFromField: closest, execCommand });
     const result = await replaceRichText("Replacement text here", d, html);
     expect(result.ok).toBe(true);
-    expect(commands[0]).toBe("insertHTML");
+    expect(commands[0]).toBe("delete");
+    expect(commands).toContain("insertHTML");
     expect(commands).toContain("insertText");
   });
 });

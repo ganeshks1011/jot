@@ -26,6 +26,9 @@
  *   trace records root identity so a re-attached subtree is visible.
  * - No op runs without verified focus and model-mapped selection coverage:
  *   select, wait for one `selectionchange` (timeout ceiling), re-check.
+ * - Every strategy is clear-then-insert: delete the selection, confirm the
+ *   editor is empty (or provably untouched), and only then insert — appends
+ *   require pre-existing content, which the clear step eliminates first.
  * - Every retry starts from identical state: a diverged composer is
  *   restored from snapshot first, and a restore that cannot verify aborts
  *   the run instead of stacking another attempt on corrupted state.
@@ -207,7 +210,7 @@ function traceWrite(info: {
 interface WriteOpOutcome {
   completed: boolean;
   execReturn: boolean;
-  skipped?: "coverage-pre" | "coverage-post";
+  skipped?: "coverage-pre" | "coverage-post" | "clear-failed";
 }
 
 /**
@@ -228,18 +231,55 @@ async function syncSelection(deps: RichTextDeps): Promise<void> {
 }
 
 /**
+ * Clear-then-insert prelude shared by every strategy: select, sync, and
+ * re-check, then delete the selection and confirm the outcome. Splitting
+ * the replace this way removes the stale-cursor append class entirely —
+ * the insert always lands in an empty (or provably untouched) editor.
+ * Returns "cleared" (empty, insert away), "unchanged" (delete was a no-op;
+ * legacy replace semantics still apply), or "failed" (partial clear —
+ * never insert into unknown state).
+ */
+async function clearEditor(
+  root: EditableElement,
+  deps: RichTextDeps,
+): Promise<"cleared" | "unchanged" | "failed"> {
+  if (!selectAllVerified(root, deps)) return "failed";
+  await syncSelection(deps);
+  if (!selectAllVerified(root, deps)) return "failed";
+  const before = normalizeComposerMultiline(readComposerText(root));
+  if (!before) return "cleared";
+  try {
+    deps.execCommand("delete", false, "");
+  } catch {
+    return "failed";
+  }
+  try {
+    root.dispatchEvent(deps.createInputEvent());
+  } catch {
+    // The read below decides; a dispatch failure alone is not fatal.
+  }
+  await deps.waitForFlush();
+  const after = normalizeComposerMultiline(readComposerText(root));
+  if (!after) return "cleared";
+  if (after === before) return "unchanged";
+  return "failed";
+}
+
+/**
  * Line-by-line insert for editors that mishandle embedded newlines in a
- * single `insertText` (the proven ProseMirror/TipTap pattern): select-all,
- * flush so the model selection maps, re-check coverage, then `insertText`
- * per line with `insertParagraph` between lines. Caller flushes and verifies.
+ * single `insertText` (the proven ProseMirror/TipTap pattern): clear first,
+ * then `insertText` per line with `insertParagraph` between lines into the
+ * empty editor. Caller flushes and verifies.
  */
 async function runMultilineInsert(
   root: EditableElement,
   deps: RichTextDeps,
   text: string,
 ): Promise<WriteOpOutcome> {
-  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-pre" };
-  await syncSelection(deps);
+  const cleared = await clearEditor(root, deps);
+  if (cleared === "failed") return { completed: false, execReturn: false, skipped: "clear-failed" };
+  // (Re)assert selection right before executing: the clear's flush may have
+  // moved it, and an empty editor selects trivially.
   if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
   let execReturn = true;
   try {
@@ -264,14 +304,14 @@ async function runMultilineInsert(
   }
 }
 
-/** Whole-text editing input: select, sync for model mapping, re-check, exec. Caller flushes and verifies. */
+/** Whole-text editing input into the cleared editor. Caller flushes and verifies. */
 async function runWholeInsert(
   root: EditableElement,
   deps: RichTextDeps,
   text: string,
 ): Promise<WriteOpOutcome> {
-  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-pre" };
-  await syncSelection(deps);
+  const cleared = await clearEditor(root, deps);
+  if (cleared === "failed") return { completed: false, execReturn: false, skipped: "clear-failed" };
   if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
   let execReturn = false;
   try {
@@ -288,18 +328,18 @@ async function runWholeInsert(
 }
 
 /**
- * Rich HTML insert: select, sync, re-check, then `insertHTML`. Chrome turns
- * the command into a paste-like input the framework's clipboard matchers
- * build real nodes from (lists, bold), unlike plain `insertText`. Caller
- * verifies by item-text containment and falls back to the plain path.
+ * Rich HTML insert into the cleared editor: Chrome turns the command into
+ * a paste-like input the framework's clipboard matchers build real nodes
+ * from (lists, bold), unlike plain `insertText`. Caller verifies by
+ * item-text containment and falls back to the plain path.
  */
 async function runHtmlInsert(
   root: EditableElement,
   deps: RichTextDeps,
   html: string,
 ): Promise<WriteOpOutcome> {
-  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-pre" };
-  await syncSelection(deps);
+  const cleared = await clearEditor(root, deps);
+  if (cleared === "failed") return { completed: false, execReturn: false, skipped: "clear-failed" };
   if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
   let execReturn = false;
   try {
