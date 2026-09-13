@@ -34,12 +34,15 @@
  *   the run instead of stacking another attempt on corrupted state.
  * - Two circuit-breakers (verbatim duplication, absolute growth) and a
  *   best-effort snapshot restore bound every failure mode.
- * - With sanitized HTML, a rich `insertHTML` attempt runs before plain
- *   text: framework clipboard matchers build real nodes (lists, bold)
- *   from a paste-like input. Verified by item-text containment with the
- *   same breakers; any failure falls through to the plain path.
+ * - With sanitized HTML, a synthetic paste attempt runs before plain
+ *   text (real DataTransfer on an untrusted paste event), with trusted
+ *   execCommand insertHTML as the fallback: framework clipboard matchers
+ *   build real nodes (lists, bold) from a paste-like input. Verified by
+ *   item-text containment with the same breakers; any failure falls
+ *   through to the plain path.
  */
 
+import { htmlToPlainText } from "../richText";
 import {
   type EditableElement,
   isEditableTarget,
@@ -51,7 +54,6 @@ import {
   type SlackReplaceResult,
   type SlackWriteDiagnostics,
 } from "./slack";
-import { htmlToPlainText } from "../richText";
 
 /** Framework markers: editor-root selectors. Data only — adding an editor
  *  is adding one line here, never a new branch. Exported so tests pin each
@@ -81,10 +83,27 @@ export interface RichTextDeps extends SlackDeps {
    * fall back to `waitForFlush`.
    */
   awaitSelectionSynced?: () => Promise<void>;
+  /**
+   * Clipboard payload/event shells for the synthetic paste attempt. Absent
+   * outside real DOM (tests, workers) — the paste attempt then skips
+   * cleanly to the execCommand fallback.
+   */
+  createDataTransfer?: () => DataTransferLike | null;
+  createPasteEvent?: () => PasteEventLike | null;
   /** `closest` bound to the captured field (null when unavailable). */
   closestFromField: ((selector: string) => EditableElement | null) | null;
   /** `closest` bound to the currently focused element (null when unavailable). */
   closestFromFocused: ((selector: string) => EditableElement | null) | null;
+}
+
+/** Minimal structural surface of a clipboard payload (DOM + fakes). */
+export interface DataTransferLike {
+  setData(format: string, data: string): void;
+}
+
+/** Minimal structural surface of a paste event shell (DOM + fakes). */
+export interface PasteEventLike {
+  [key: string]: unknown;
 }
 
 export interface FrameworkRoot {
@@ -210,7 +229,9 @@ function traceWrite(info: {
 interface WriteOpOutcome {
   completed: boolean;
   execReturn: boolean;
-  skipped?: "coverage-pre" | "coverage-post" | "clear-failed";
+  skipped?: "coverage-pre" | "coverage-post" | "clear-failed" | "paste-unavailable";
+  /** Which mechanism a completed HTML op used (trace + tests). */
+  mechanism?: "paste" | "exec";
 }
 
 /**
@@ -239,10 +260,7 @@ async function syncSelection(deps: RichTextDeps): Promise<void> {
  * legacy replace semantics still apply), or "failed" (partial clear —
  * never insert into unknown state).
  */
-async function clearEditor(
-  root: EditableElement,
-  deps: RichTextDeps,
-): Promise<"cleared" | "unchanged" | "failed"> {
+async function clearEditor(root: EditableElement, deps: RichTextDeps): Promise<"cleared" | "unchanged" | "failed"> {
   if (!selectAllVerified(root, deps)) return "failed";
   await syncSelection(deps);
   if (!selectAllVerified(root, deps)) return "failed";
@@ -271,11 +289,7 @@ async function clearEditor(
  * then `insertText` per line with `insertParagraph` between lines into the
  * empty editor. Caller flushes and verifies.
  */
-async function runMultilineInsert(
-  root: EditableElement,
-  deps: RichTextDeps,
-  text: string,
-): Promise<WriteOpOutcome> {
+async function runMultilineInsert(root: EditableElement, deps: RichTextDeps, text: string): Promise<WriteOpOutcome> {
   const cleared = await clearEditor(root, deps);
   if (cleared === "failed") return { completed: false, execReturn: false, skipped: "clear-failed" };
   // (Re)assert selection right before executing: the clear's flush may have
@@ -305,11 +319,7 @@ async function runMultilineInsert(
 }
 
 /** Whole-text editing input into the cleared editor. Caller flushes and verifies. */
-async function runWholeInsert(
-  root: EditableElement,
-  deps: RichTextDeps,
-  text: string,
-): Promise<WriteOpOutcome> {
+async function runWholeInsert(root: EditableElement, deps: RichTextDeps, text: string): Promise<WriteOpOutcome> {
   const cleared = await clearEditor(root, deps);
   if (cleared === "failed") return { completed: false, execReturn: false, skipped: "clear-failed" };
   if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
@@ -328,8 +338,65 @@ async function runWholeInsert(
 }
 
 /**
- * Rich HTML insert into the cleared editor: Chrome turns the command into
- * a paste-like input the framework's clipboard matchers build real nodes
+ * Synthetic paste into the cleared editor: a real DataTransfer (text/html
+ * + block-aware text/plain) carried on an untrusted paste event through
+ * the framework's native paste pipeline — the same matchers real user
+ * pastes hit. Chrome's ClipboardEventInit has no clipboardData member (it
+ * is silently dropped from the constructor dict), so the prototype's
+ * readonly getter is shadowed with our payload instead. Caller flushes
+ * and verifies; any failure falls through to execCommand.
+ */
+async function runPasteInsert(root: EditableElement, deps: RichTextDeps, html: string): Promise<WriteOpOutcome> {
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
+  let transfer: DataTransferLike | null = null;
+  let pasteEvent: PasteEventLike | null = null;
+  try {
+    transfer = deps.createDataTransfer?.() ?? null;
+    pasteEvent = deps.createPasteEvent?.() ?? null;
+  } catch {
+    return { completed: false, execReturn: false, skipped: "paste-unavailable" };
+  }
+  if (!transfer || !pasteEvent) return { completed: false, execReturn: false, skipped: "paste-unavailable" };
+  try {
+    transfer.setData("text/html", html);
+    transfer.setData("text/plain", htmlToPlainText(html));
+  } catch {
+    return { completed: false, execReturn: false, skipped: "paste-unavailable" };
+  }
+  try {
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: transfer,
+      configurable: true,
+      enumerable: true,
+      writable: false,
+    });
+  } catch {
+    return { completed: false, execReturn: false, skipped: "paste-unavailable" };
+  }
+  try {
+    root.focus();
+  } catch {
+    // Focus is best-effort; the dispatch below decides.
+  }
+  let dispatched = false;
+  try {
+    dispatched = root.dispatchEvent(pasteEvent as unknown as Event);
+  } catch {
+    return { completed: false, execReturn: false };
+  }
+  try {
+    root.dispatchEvent(deps.createInputEvent());
+  } catch {
+    // Verification decides; a dispatch failure alone is not fatal.
+  }
+  return { completed: true, execReturn: dispatched };
+}
+
+/**
+ * Rich HTML insert into the cleared editor. Synthetic paste runs first
+ * (untrusted event, real DataTransfer, native paste pipeline); trusted
+ * execCommand insertHTML is the fallback. Chrome turns the command into a
+ * paste-like input the framework's clipboard matchers build real nodes
  * from (lists, bold), unlike plain `insertText`. Caller verifies by
  * item-text containment and falls back to the plain path.
  */
@@ -337,9 +404,21 @@ async function runHtmlInsert(
   root: EditableElement,
   deps: RichTextDeps,
   html: string,
-): Promise<WriteOpOutcome> {
+): Promise<WriteOpOutcome & { mechanism?: "paste" | "exec"; pasteTried?: boolean }> {
   const cleared = await clearEditor(root, deps);
   if (cleared === "failed") return { completed: false, execReturn: false, skipped: "clear-failed" };
+  const plainExpected = normalizeComposerMultiline(htmlToPlainText(html));
+  // Attempt 1: synthetic paste. On dispatch-but-no-verify, fall through to
+  // exec below: re-select covers whatever the paste left, so the replace
+  // heals partial application instead of stacking onto it.
+  const pasted = await runPasteInsert(root, deps, html);
+  if (pasted.completed && plainExpected) {
+    await deps.waitForFlush();
+    const actual = normalizeComposerMultiline(readComposerText(root));
+    if (actual.includes(plainExpected)) return { ...pasted, mechanism: "paste" as const, pasteTried: true };
+  }
+  const pasteTried = pasted.completed;
+  // Attempt 2: trusted execCommand insertHTML.
   if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false, skipped: "coverage-post" };
   let execReturn = false;
   try {
@@ -352,7 +431,7 @@ async function runHtmlInsert(
   } catch {
     // Verification decides; a dispatch failure alone is not fatal.
   }
-  return { completed: true, execReturn };
+  return { completed: true, execReturn, mechanism: "exec" as const, pasteTried };
 }
 
 /**
@@ -413,13 +492,13 @@ async function tryRestoreOriginal(deps: RichTextDeps, snapshot: string): Promise
 
 /**
  * Replace the framework composer contents via real editing input and verify.
- * With sanitized HTML, a rich `insertHTML` attempt runs first (framework
- * clipboard matchers build real list and inline nodes from it); then the
- * plain-text path exactly as before. Exactly one write op per strategy with
- * a frame flush before every read-back; focus, selection coverage, and two
- * circuit-breakers (verbatim duplication, absolute growth) guard every step.
- * Reports failure instead of guessing — the caller keeps the panel open so
- * the rewrite stays copyable.
+ * With sanitized HTML, a synthetic paste attempt runs first (then trusted
+ * execCommand insertHTML); then the plain-text path exactly as before.
+ * Exactly one write op per strategy with a frame flush before every
+ * read-back; focus, selection coverage, and two circuit-breakers (verbatim
+ * duplication, absolute growth) guard every step. Reports failure instead
+ * of guessing — the caller keeps the panel open so the rewrite stays
+ * copyable.
  */
 export async function replaceRichText(
   text: string,
@@ -525,12 +604,13 @@ export async function replaceRichText(
         const htmlOk = actual.includes(plainExpected);
         traceWrite({
           attempt: diag.attempts,
-          op: "html",
+          op: rich.mechanism === "paste" ? "html-paste" : "html-exec",
           execReturn: rich.execReturn,
           preOpLen,
           postOpLen: actual.length,
           verifyOk: htmlOk,
           sameRoot,
+          detail: rich.mechanism === "exec" && rich.pasteTried ? "paste-unverified" : undefined,
         });
         if (isDuplicated(actual, plainExpected) || isOvergrown(actual.length, diag.preLen, plainExpected.length)) {
           break;
@@ -688,6 +768,26 @@ export function liveRichTextDeps(doc: Document, win: Window, activeField: HTMLEl
           finish();
         }, 150);
       }),
+    // Synthetic paste shells: real constructors when available, absent
+    // otherwise (tests, workers) so the paste attempt skips to execCommand.
+    createDataTransfer: () => {
+      try {
+        return new DataTransfer();
+      } catch {
+        return null;
+      }
+    },
+    createPasteEvent: () => {
+      try {
+        return new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+        }) as unknown as PasteEventLike;
+      } catch {
+        return null;
+      }
+    },
     closestFromField: bindClosest(activeField),
     get closestFromFocused() {
       return bindClosest(doc.activeElement);

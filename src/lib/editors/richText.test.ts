@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { htmlToPlainText } from "../richText";
 import {
   FRAMEWORK_MARKERS,
   liveRichTextDeps,
@@ -401,7 +402,8 @@ describe("replaceRichText", () => {
   it("restores the snapshot before retrying a diverged composer", async () => {
     const { root, closest } = markedRoot("lexical", { innerText: "old" });
     const execCommand = vi.fn((_command: string, _showUI: boolean, value: string) => {
-      if (value === "old") root.innerText = value; // restore replaces
+      if (value === "old")
+        root.innerText = value; // restore replaces
       else root.innerText = `${root.innerText ?? ""}!`; // ops append a fragment
       return true;
     });
@@ -534,6 +536,124 @@ describe("replaceRichText", () => {
     expect(commands[0]).toBe("delete");
     expect(commands).toContain("insertHTML");
     expect(commands).toContain("insertText");
+  });
+
+  it("pastes HTML via synthetic paste before trying execCommand", async () => {
+    const html = "<ul><li>one</li><li>two</li></ul>";
+    const commands: string[] = [];
+    const flavors: Array<{ format: string; data: string }> = [];
+    const dispatched: unknown[] = [];
+    const execCommand = vi.fn((command: string, _showUI: boolean, _value: string) => {
+      commands.push(command);
+      return command === "delete";
+    });
+    const transfer = {
+      setData: (format: string, data: string) => {
+        flavors.push({ format, data });
+      },
+    };
+    const pasteEvent: Record<string, unknown> = {};
+    const { root, closest } = markedRoot("lexical", {
+      innerText: "old",
+      dispatchEvent: (e: Event) => {
+        dispatched.push(e);
+        // The framework consumes the overridden clipboard payload.
+        const payload = (e as unknown as Record<string, unknown>).clipboardData;
+        if (payload && typeof payload === "object") {
+          root.innerText = "- one\n- two";
+        }
+        return true;
+      },
+    });
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand,
+      createDataTransfer: () => transfer,
+      createPasteEvent: () => pasteEvent,
+    });
+    const seen: Array<Record<string, unknown>> = [];
+    const spy = vi.spyOn(console, "debug").mockImplementation((...args: unknown[]) => {
+      if (args[0] === "[jot] rich-write") seen.push(args[1] as Record<string, unknown>);
+    });
+    const result = await replaceRichText("one\ntwo", d, html);
+    spy.mockRestore();
+    expect(result.ok).toBe(true);
+    expect(root.innerText).toBe("- one\n- two");
+    // Paste landed: execCommand never ran insertHTML or insertText.
+    expect(commands).toEqual(["delete"]);
+    // Both clipboard flavors were set from the sanitized HTML.
+    expect(flavors).toContainEqual({ format: "text/html", data: html });
+    expect(flavors).toContainEqual({ format: "text/plain", data: htmlToPlainText(html) });
+    // The event dispatched on the resolved root carries the payload.
+    expect(dispatched).toContain(pasteEvent);
+    expect(seen.map((t) => t.op)).toContain("html-paste");
+  });
+
+  it("falls back to execCommand when the paste does not verify", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const html = "<ul><li>one</li><li>two</li></ul>";
+    const commands: string[] = [];
+    const execCommand = vi.fn((command: string, _showUI: boolean, _value: string) => {
+      commands.push(command);
+      if (command === "delete") {
+        root.innerText = "";
+        return true;
+      }
+      if (command === "insertHTML") {
+        root.innerText = "- one\n- two";
+        return true;
+      }
+      return false;
+    });
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand,
+      createDataTransfer: () => ({ setData: () => {} }),
+      // Dispatched but the framework honors nothing: exec must heal it.
+      createPasteEvent: () => ({}),
+    });
+    const seen: Array<Record<string, unknown>> = [];
+    const spy = vi.spyOn(console, "debug").mockImplementation((...args: unknown[]) => {
+      if (args[0] === "[jot] rich-write") seen.push(args[1] as Record<string, unknown>);
+    });
+    const result = await replaceRichText("one\ntwo", d, html);
+    spy.mockRestore();
+    expect(result.ok).toBe(true);
+    expect(commands).toEqual(["delete", "insertHTML"]);
+    const htmlTrace = seen.find((t) => t.op === "html-exec");
+    expect(htmlTrace?.detail).toBe("paste-unverified");
+  });
+
+  it("skips paste cleanly when clipboard construction throws", async () => {
+    const { root, closest } = markedRoot("lexical", { innerText: "old" });
+    const html = "<ul><li>one</li><li>two</li></ul>";
+    const commands: string[] = [];
+    const execCommand = vi.fn((command: string, _showUI: boolean, _value: string) => {
+      commands.push(command);
+      if (command === "delete") {
+        root.innerText = "";
+        return true;
+      }
+      if (command === "insertHTML") {
+        root.innerText = "- one\n- two";
+        return true;
+      }
+      return false;
+    });
+    const d = deps({
+      field: root,
+      closestFromField: closest,
+      execCommand,
+      createDataTransfer: () => {
+        throw new Error("no DataTransfer here");
+      },
+      createPasteEvent: () => ({}),
+    });
+    const result = await replaceRichText("one\ntwo", d, html);
+    expect(result.ok).toBe(true);
+    expect(commands).toEqual(["delete", "insertHTML"]);
   });
 });
 
