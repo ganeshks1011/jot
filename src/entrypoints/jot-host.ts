@@ -952,11 +952,12 @@ function createHost(): HostController {
   }
 
   /** Report a failed write back to the overlay (which stays open). */
-  function postInsertFailed(text: string, diagnostics?: SlackWriteDiagnostics): void {
+  function postInsertFailed(text: string, diagnostics?: SlackWriteDiagnostics, html?: string | null): void {
     iframe?.contentWindow?.postMessage(
       {
         type: "insert-failed",
         text,
+        html: html ?? null,
         strategy: diagnostics?.strategy ?? null,
         tag: diagnostics?.tag ?? null,
         preLen: diagnostics?.preLen ?? -1,
@@ -1040,7 +1041,9 @@ function createHost(): HostController {
           const richTextDeps = liveRichTextDeps(document, window, activeField);
           if (resolveFrameworkRoot(richTextDeps)) {
             // Same verified-write contract as Slack: framework editors get
-            // plain text and the panel stays open on failure.
+            // plain text and the panel stays open on failure. The sanitized
+            // HTML rides along so a failed auto-insert stays manually
+            // pastable with formatting intact.
             insertInFlight = true;
             try {
               const outcome = await insertText(msg.text);
@@ -1048,7 +1051,7 @@ function createHost(): HostController {
                 postInsertResult(outcome.ok, outcome.diagnostics);
               }
               if (outcome.ok) closePanel();
-              else postInsertFailed(msg.text, outcome.diagnostics);
+              else postInsertFailed(msg.text, outcome.diagnostics, html);
             } finally {
               insertInFlight = false;
             }

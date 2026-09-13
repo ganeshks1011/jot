@@ -25,7 +25,7 @@ import {
   postResize,
   postToParent,
 } from "./lib/bridge";
-import { copyText } from "./lib/clipboard";
+import { copyHtml } from "./lib/clipboard";
 import { type FocusZone, selectHelperText, zoneForTarget } from "./lib/helperText";
 import { startReadyRetry } from "./lib/readyRetry";
 import { useGeneration } from "./lib/useGeneration";
@@ -70,6 +70,7 @@ export default function App() {
   // Rewrite the host rejected (e.g. Slack composer). Panel stays open so the
   // user can copy it instead of losing the result.
   const [failedText, setFailedText] = useState<string | null>(null);
+  const [failedHtml, setFailedHtml] = useState<string | null>(null);
   const [failedMetrics, setFailedMetrics] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // Composer mirroring from the host: placement drives the connector edge,
@@ -120,7 +121,8 @@ export default function App() {
 
   const copyFailedText = useCallback(async () => {
     if (!failedText) return;
-    const ok = await copyText(
+    const ok = await copyHtml(
+      failedHtml,
       failedText,
       typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
       document,
@@ -133,10 +135,11 @@ export default function App() {
         editor_type: editorRef.current,
       });
     }
-  }, [failedText]);
+  }, [failedText, failedHtml]);
 
   const retryFailed = useCallback(() => {
     setFailedText(null);
+    setFailedHtml(null);
     setCopied(false);
     generate(inputText);
   }, [generate, inputText]);
@@ -164,12 +167,14 @@ export default function App() {
 
   const copyOutput = useCallback(async () => {
     if (!output) return;
-    // Clipboard takes plain text; formatted output converts via block-aware
-    // plain conversion (paragraphs/lists intact, tags dropped).
-    const plain = hasFormatting && /<[a-zA-Z]/.test(output) ? htmlToPlainText(output) : output;
+    // Clipboard takes both flavors when formatted: rich editors paste HTML,
+    // plain fields take the block-aware plain conversion (tags dropped).
+    const outputHtml = hasFormatting && /<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null;
+    const plain = outputHtml ? htmlToPlainText(output) : output;
     // Clipboard may be denied by the page's permissions policy (e.g. Google
     // Chat). Degrade to a notice, never block the insert path.
-    const ok = await copyText(
+    const ok = await copyHtml(
+      outputHtml,
       plain,
       typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
       document,
@@ -294,6 +299,7 @@ export default function App() {
       onInsertFailed((msg) => {
         if (verdictTimer.current) clearTimeout(verdictTimer.current);
         setFailedText(msg.text);
+        setFailedHtml(typeof msg.html === "string" ? msg.html : null);
         setFailedMetrics(describeMetrics(msg));
         setCopied(false);
         setInserted(false);

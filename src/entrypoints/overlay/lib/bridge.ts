@@ -74,6 +74,8 @@ export interface HostInsertResultMessage extends InsertMetrics {
 export interface HostInsertFailedMessage extends Partial<InsertMetrics> {
   type: "insert-failed";
   text: string;
+  /** Sanitized HTML for manual paste with formatting intact (if any). */
+  html?: string | null;
 }
 
 /** True when rendered inside the content-script-created iframe. */
