@@ -395,27 +395,6 @@ export default function App() {
     card.style.setProperty("--jot-content-max", `${Math.round(cap)}px`);
   }, [maxPanelHeight, output, status]);
 
-  // Paint audit: computed backgrounds after first paint, to diagnose
-  // background pairing issues. Theme values only, never content.
-  useEffect(() => {
-    const t = setTimeout(() => {
-      try {
-        const card = rootRef.current;
-        const diamond = card?.querySelector(".jot-connector") ?? document.querySelector(".jot-connector");
-        const cs = (el: Element | null) => (el ? getComputedStyle(el).backgroundColor : null);
-        console.debug("[jot] paint audit", {
-          card: cs(card),
-          diamond: cs(diamond),
-          document: getComputedStyle(document.documentElement).backgroundColor,
-          paired: card?.classList.contains("jot-paired") ?? null,
-        });
-      } catch {
-        // Logging must never break the panel.
-      }
-    }, 500);
-    return () => clearTimeout(t);
-  }, []);
-
   const close = useCallback(() => {
     // Stop an in-flight stream so it can't write state after dismissal.
     abortRef.current?.abort();
@@ -436,20 +415,6 @@ export default function App() {
         if (verdictTimer.current) clearTimeout(verdictTimer.current);
         // Success closes from the host side; mirror it here in case the
         // host already tore down (or this verdict arrived first).
-        // Keep a console trail anyway.
-        try {
-          console.debug("[jot] insert-result", {
-            ok: msg.ok,
-            strategy: msg.strategy,
-            tag: msg.tag,
-            preLen: msg.preLen,
-            postLen: msg.postLen,
-            expectedLen: msg.expectedLen,
-            attempts: msg.attempts,
-          });
-        } catch {
-          // Logging must never break the panel.
-        }
         if (msg.ok) close();
       }),
     ];
@@ -491,15 +456,6 @@ export default function App() {
       setPageDark(msg.pageDark ?? null);
       setConnectorX(msg.connectorX ?? null);
       verifiedWriteRef.current = msg.verifiedWrite ?? false;
-      try {
-        // Theme colors only. Diagnostic trail for background pairing issues.
-        console.debug("[jot] composer colors", {
-          bg: msg.composerBg ?? null,
-          fg: msg.composerFg ?? null,
-        });
-      } catch {
-        // Logging must never break the panel.
-      }
       clearCache();
       if (!text) {
         setStatus("idle");

@@ -993,21 +993,6 @@ function createHost(): HostController {
 
   /** Report a verified write (lengths/tags only, never text). */
   function postInsertResult(ok: boolean, diagnostics: SlackWriteDiagnostics): void {
-    try {
-      // Page console persists after the panel closes. The diagnostic trail
-      // for silent-close reports.
-      console.info("[jot] verified insert", {
-        ok,
-        strategy: diagnostics.strategy,
-        tag: diagnostics.tag,
-        preLen: diagnostics.preLen,
-        postLen: diagnostics.postLen,
-        expectedLen: diagnostics.expectedLen,
-        attempts: diagnostics.attempts,
-      });
-    } catch {
-      // Logging must never break insertion.
-    }
     iframe?.contentWindow?.postMessage(
       {
         type: "insert-result",
