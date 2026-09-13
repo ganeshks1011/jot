@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { isRetiredModel } from "./openai";
-import { GEMINI_ADAPTER, getAdapter, getAllAdapters, getRecommendedModels, OPENAI_ENDPOINT_PRESETS } from "./registry";
+import {
+  GEMINI_ADAPTER,
+  getAdapter,
+  getAllAdapters,
+  getRecommendedModels,
+  GROK_ADAPTER,
+  OPENAI_ENDPOINT_PRESETS,
+} from "./registry";
 
 describe("builtin provider order", () => {
   it("lists Jot rewrite API first", () => {
@@ -31,6 +38,12 @@ describe("recommended models", () => {
 
   it("recommends haiku for Anthropic", () => {
     expect(getRecommendedModels("anthropic")).toEqual(["claude-haiku-4-5"]);
+  });
+
+  it("registers Grok as a builtin with a recommended model", () => {
+    expect(getAdapter("grok")).toBe(GROK_ADAPTER);
+    expect(getAllAdapters().some((a) => a.id === "grok")).toBe(true);
+    expect(getRecommendedModels("grok")).toEqual(["grok-4.3"]);
   });
 
   it("returns an empty list for unknown and custom providers", () => {

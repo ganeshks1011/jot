@@ -36,6 +36,16 @@ export const GEMINI_ADAPTER = new OpenAICompatibleProvider(
   "https://aistudio.google.com/apikey",
 );
 
+/** xAI via its OpenAI-compatible endpoint (Bearer `xai-...`). */
+export const GROK_ADAPTER = new OpenAICompatibleProvider(
+  "grok",
+  "Grok",
+  "https://api.x.ai/v1",
+  "grok-4.3",
+  false,
+  "https://console.x.ai",
+);
+
 /** Curated model picks shown as "Recommended" chips in settings UIs.
  *  Keyed by adapter id; unknown/custom providers get no recommendations. */
 export const RECOMMENDED_MODELS: Record<string, string[]> = {
@@ -44,6 +54,7 @@ export const RECOMMENDED_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o-mini"],
   anthropic: ["claude-haiku-4-5"],
   gemini: ["gemini-3.5-flash-lite"],
+  grok: ["grok-4.3"],
 };
 
 export function getRecommendedModels(id: string): string[] {
@@ -58,6 +69,7 @@ const BUILTINS: ProviderAdapter[] = [
   OPENAI_ADAPTER,
   ANTHROPIC_ADAPTER,
   GEMINI_ADAPTER,
+  GROK_ADAPTER,
 ];
 
 /** Selectable base-URL presets for the OpenAI adapter (all OpenAI-compatible).

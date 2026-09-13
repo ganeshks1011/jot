@@ -46,7 +46,7 @@ function isErrorType(v: unknown): v is AnalyticsErrorType {
   return typeof v === "string" && ["no-key", "auth", "rate-limit", "network", "empty", "quota", "unknown"].includes(v);
 }
 
-const KNOWN_PROVIDERS: ProviderLabel[] = ["jot-api", "opencode", "openai", "anthropic", "gemini"];
+const KNOWN_PROVIDERS: ProviderLabel[] = ["jot-api", "opencode", "openai", "anthropic", "gemini", "grok"];
 
 function isProviderLabel(v: unknown): v is ProviderLabel {
   return typeof v === "string" && (KNOWN_PROVIDERS as string[]).includes(v);
