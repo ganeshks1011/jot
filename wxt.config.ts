@@ -31,11 +31,13 @@ export default defineConfig({
      * activeTab grants temporary access to the active tab on invocation
      * (keyboard shortcut or action click), and `scripting` injects the
      * jot-host controller via chrome.scripting.executeScript. Closing the
-     * overlay tears the controller down completely. `clipboardRead` lets the
-     * host-side paste tier read overlay-written flavors; `clipboardWrite`
-     * backs the overlay copy buttons (warning-free).
+     * overlay tears the controller down completely. `clipboardRead` exists
+     * solely for the host framework-editor tier's `execCommand("paste")`
+     * (nothing calls async `read()`); overlay writes rely on the iframe's
+     * `allow="clipboard-write"` delegation plus the `execCommand("copy")`
+     * fallback, so no `clipboardWrite` permission is declared.
      */
-    permissions: ["storage", "activeTab", "scripting", "contextMenus", "clipboardRead", "clipboardWrite"],
+    permissions: ["storage", "activeTab", "scripting", "contextMenus", "clipboardRead"],
     commands: {
       "toggle-jot": {
         suggested_key: {
