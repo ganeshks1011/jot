@@ -14,6 +14,8 @@ export const FULLSCREEN_CARD_WIDTH = 880;
 export const FULLSCREEN_MARGIN = 16;
 /** Compact pre-content card width: the loader opens small even on wide composers. */
 export const COMPACT_CARD_WIDTH = 480;
+/** Floor keeping selection-anchored cards readable (never narrower). */
+export const TEXT_ANCHORED_MIN_WIDTH = 360;
 /** Unanchored float panel shares a fixed detached width. */
 export const FLOAT_CARD_WIDTH = 800;
 
@@ -27,6 +29,40 @@ export interface AnchorRect {
   top: number;
   bottom: number;
   width: number;
+}
+
+/** Live selected-text rect (viewport coords). Null when nothing usable. */
+export interface TextSelectionRect {
+  left: number;
+  top: number;
+  bottom: number;
+  width: number;
+}
+
+/**
+ * Effective anchor for geometry: the selected text when usable, else the
+ * container box. Card hugs the words (floored for readability, capped at
+ * the container and the fullscreen width) and centers on the selection;
+ * budgets and the connector follow automatically downstream.
+ */
+export function synthesizeAnchor(
+  box: AnchorRect,
+  sel: TextSelectionRect | null,
+  compact: boolean,
+): AnchorRect {
+  const usable =
+    sel && sel.width > 0 && sel.bottom > sel.top ? sel : null;
+  const boxed = Math.min(box.width, FULLSCREEN_CARD_WIDTH);
+  const centerX = usable ? usable.left + usable.width / 2 : box.left + box.width / 2;
+  let cardW = boxed;
+  if (usable) cardW = Math.min(boxed, Math.max(TEXT_ANCHORED_MIN_WIDTH, Math.min(usable.width, boxed)));
+  if (compact) cardW = Math.min(cardW, COMPACT_CARD_WIDTH);
+  return {
+    left: centerX - cardW / 2,
+    top: usable ? usable.top : box.top,
+    bottom: usable ? usable.bottom : box.bottom,
+    width: cardW,
+  };
 }
 
 export type OverlayPlacement = "above" | "below" | "float" | "fullscreen";

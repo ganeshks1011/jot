@@ -9,6 +9,8 @@ import {
   resolveMaxPanelHeight,
   resolveOverlayGeometry,
   shouldUseFullscreen,
+  synthesizeAnchor,
+  TEXT_ANCHORED_MIN_WIDTH,
 } from "./overlayGeometry";
 
 describe("resolveOverlayGeometry", () => {
@@ -181,5 +183,55 @@ describe("isDarkBackground", () => {
     expect(isDarkBackground("rgba(0, 0, 0, 0)")).toBeNull();
     expect(isDarkBackground("CanvasText")).toBeNull();
     expect(isDarkBackground("")).toBeNull();
+  });
+});
+
+describe("synthesizeAnchor", () => {
+  const box = { left: 100, top: 300, bottom: 420, width: 1000 };
+
+  it("hugs a narrow selection with the readability floor", () => {
+    const sel = { left: 400, top: 330, bottom: 350, width: 80 };
+    const a = synthesizeAnchor(box, sel, false);
+    expect(a.width).toBe(TEXT_ANCHORED_MIN_WIDTH);
+    expect(a.left).toBe(440 - TEXT_ANCHORED_MIN_WIDTH / 2);
+    expect(a.top).toBe(330);
+    expect(a.bottom).toBe(350);
+  });
+
+  it("follows a wide selection up to the box width", () => {
+    const sel = { left: 150, top: 330, bottom: 350, width: 600 };
+    const a = synthesizeAnchor(box, sel, false);
+    expect(a.width).toBe(600);
+    expect(a.left).toBe(150);
+  });
+
+  it("caps the card at the fullscreen width on huge containers", () => {
+    const huge = { left: 0, top: 300, bottom: 420, width: 2000 };
+    expect(synthesizeAnchor(huge, null, false).width).toBe(FULLSCREEN_CARD_WIDTH);
+    const sel = { left: 500, top: 330, bottom: 350, width: 1500 };
+    expect(synthesizeAnchor(huge, sel, false).width).toBe(FULLSCREEN_CARD_WIDTH);
+  });
+
+  it("never narrows below a small container", () => {
+    const small = { left: 100, top: 300, bottom: 360, width: 200 };
+    const sel = { left: 120, top: 310, bottom: 330, width: 40 };
+    expect(synthesizeAnchor(small, sel, false).width).toBe(200);
+  });
+
+  it("centers compact cards on the selection", () => {
+    const sel = { left: 700, top: 330, bottom: 350, width: 80 };
+    const a = synthesizeAnchor(box, sel, true);
+    expect(a.width).toBe(TEXT_ANCHORED_MIN_WIDTH);
+    expect(a.left).toBe(740 - TEXT_ANCHORED_MIN_WIDTH / 2);
+  });
+
+  it("falls back to the box for absent or collapsed selections", () => {
+    const a = synthesizeAnchor(box, null, false);
+    expect(a.width).toBe(FULLSCREEN_CARD_WIDTH);
+    expect(a.left).toBe(600 - FULLSCREEN_CARD_WIDTH / 2);
+    expect(a.top).toBe(300);
+    expect(a.bottom).toBe(420);
+    const collapsed = { left: 400, top: 330, bottom: 330, width: 0 };
+    expect(synthesizeAnchor(box, collapsed, false)).toEqual(a);
   });
 });

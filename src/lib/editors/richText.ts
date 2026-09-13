@@ -147,32 +147,69 @@ function isDuplicated(actual: string, expected: string): boolean {
 }
 
 /**
+ * TEMPORARY diagnostic trace for a live duplication investigation (lengths
+ * and tags only, never message content). Each write op reports what it did
+ * so a reproduce-and-paste round identifies the appending op. Removed once
+ * the mechanism is confirmed.
+ */
+function traceWrite(info: {
+  attempt: number;
+  op: string;
+  execReturn: boolean;
+  preOpLen: number;
+  postOpLen: number;
+  verifyOk: boolean;
+}): void {
+  try {
+    console.debug("[jot] rich-write", info);
+  } catch {
+    // Logging must never break insertion.
+  }
+}
+
+/** Outcome of a write op: whether it ran, and what execCommand reported. */
+interface WriteOpOutcome {
+  completed: boolean;
+  execReturn: boolean;
+}
+
+/**
  * Line-by-line insert for editors that mishandle embedded newlines in a
  * single `insertText` (the proven ProseMirror/TipTap pattern): select-all,
  * then `insertText` per line with `insertParagraph` between lines. Caller
  * flushes and verifies.
  */
-function runMultilineInsert(root: EditableElement, deps: RichTextDeps, text: string): boolean {
-  if (!selectAllVerified(root, deps)) return false;
+function runMultilineInsert(root: EditableElement, deps: RichTextDeps, text: string): WriteOpOutcome {
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
+  let execReturn = true;
   try {
     const lines = text.split("\n");
     for (let i = 0; i < lines.length; i++) {
-      if (i > 0 && !deps.execCommand("insertParagraph", false, "")) return false;
+      if (i > 0) {
+        const paraOk = deps.execCommand("insertParagraph", false, "");
+        execReturn = execReturn && paraOk;
+        if (!paraOk) return { completed: false, execReturn };
+      }
       const line = lines[i];
-      if (line && !deps.execCommand("insertText", false, line)) return false;
+      if (line) {
+        const lineOk = deps.execCommand("insertText", false, line);
+        execReturn = execReturn && lineOk;
+        if (!lineOk) return { completed: false, execReturn };
+      }
     }
     root.dispatchEvent(deps.createInputEvent());
-    return true;
+    return { completed: true, execReturn };
   } catch {
-    return false;
+    return { completed: false, execReturn };
   }
 }
 
 /** Whole-text editing input. Caller flushes and verifies. */
-function runWholeInsert(root: EditableElement, deps: RichTextDeps, text: string): boolean {
-  if (!selectAllVerified(root, deps)) return false;
+function runWholeInsert(root: EditableElement, deps: RichTextDeps, text: string): WriteOpOutcome {
+  if (!selectAllVerified(root, deps)) return { completed: false, execReturn: false };
+  let execReturn = false;
   try {
-    deps.execCommand("insertText", false, text);
+    execReturn = deps.execCommand("insertText", false, text);
   } catch {
     // Verification decides; execCommand lies in both directions.
   }
@@ -181,7 +218,7 @@ function runWholeInsert(root: EditableElement, deps: RichTextDeps, text: string)
   } catch {
     // Verification decides; a dispatch failure alone is not fatal.
   }
-  return true;
+  return { completed: true, execReturn };
 }
 
 /**
@@ -240,20 +277,39 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
     }
     if (!focusLanded(root, deps)) continue;
     diag.attempts += 1;
-    if (runWholeInsert(root, deps, text)) {
+    const preOpLen = normalizeComposerMultiline(readComposerText(root)).length;
+    const whole = runWholeInsert(root, deps, text);
+    if (whole.completed) {
       await deps.waitForFlush();
       const check = verifyExact(root, text);
       lastReadBack = check.readBack;
       const actual = normalizeComposerMultiline(check.readBack);
+      traceWrite({
+        attempt: diag.attempts,
+        op: "whole",
+        execReturn: whole.execReturn,
+        preOpLen,
+        postOpLen: actual.length,
+        verifyOk: check.ok,
+      });
       if (isDuplicated(actual, expected)) return fail(check.readBack);
       if (check.ok) return succeed(check.readBack);
     }
     // Multiline select-all heals partial writes from the attempt above.
-    if (runMultilineInsert(root, deps, text)) {
+    const multi = runMultilineInsert(root, deps, text);
+    if (multi.completed) {
       await deps.waitForFlush();
       const check = verifyExact(root, text);
       lastReadBack = check.readBack;
       const actual = normalizeComposerMultiline(check.readBack);
+      traceWrite({
+        attempt: diag.attempts,
+        op: "multiline",
+        execReturn: multi.execReturn,
+        preOpLen,
+        postOpLen: actual.length,
+        verifyOk: check.ok,
+      });
       if (isDuplicated(actual, expected)) return fail(check.readBack);
       if (check.ok) return succeed(check.readBack);
     }

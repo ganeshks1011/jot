@@ -23,6 +23,7 @@ import {
   pickOpaqueBackground,
   resolveMaxPanelHeight,
   resolveOverlayGeometry,
+  synthesizeAnchor,
 } from "@/lib/overlayGeometry";
 import { detectMentionLabels } from "@/lib/redaction/detectors";
 import { hasRichFormatting, isMultilineText, sanitizeRichHtml } from "@/lib/richText";
@@ -287,6 +288,30 @@ function createHost(): HostController {
   }
 
   /**
+   * Live selected-text rect for text-anchored positioning. Only a connected,
+   * non-collapsed range counts; anything else falls back to the container
+   * box. Textarea/input selections have no pixel rects and always fall back
+   * (their boxes are tight). Recomputed on every reposition so scroll tracks
+   * live and a detached range (framework re-render) fails safe to the box.
+   */
+  function snapshotTextAnchor(): {
+    left: number;
+    top: number;
+    bottom: number;
+    width: number;
+  } | null {
+    try {
+      if (!capturedRange) return null;
+      if (!capturedRange.commonAncestorContainer.isConnected) return null;
+      const rect = capturedRange.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+      return { left: rect.left, top: rect.top, bottom: rect.bottom, width: rect.width };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * The bordered box to highlight and anchor to. Most fields carry their own
    * border; framework editors render a borderless inner node inside a
    * bordered wrapper, so climb for the nearest ancestor with a painted
@@ -335,7 +360,9 @@ function createHost(): HostController {
   function positionIframe(height: number, compact = false): void {
     if (!iframe) return;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const anchor = snapshotAnchor();
+    const box = snapshotAnchor();
+    // Hug the selected words when usable; the container box otherwise.
+    const anchor = box ? synthesizeAnchor(box, snapshotTextAnchor(), compact) : null;
     // Pinned fullscreen forces fullscreen geometry by presenting a
     // full-height panel.
     const g = resolveOverlayGeometry(viewport, anchor, fullscreenPinned ? viewport.height : height, compact);
