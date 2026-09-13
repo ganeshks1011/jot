@@ -123,25 +123,21 @@ describe("isTransparentBackground", () => {
 describe("resolveMaxPanelHeight", () => {
   const viewport = { width: 1440, height: 900 };
 
-  it("budgets free space below the composer", () => {
-    expect(resolveMaxPanelHeight(viewport, { left: 200, top: 300, bottom: 340, width: 560 }, "below")).toBe(
-      900 - 340 - 8,
-    );
+  it("budgets near-viewport height for anchored placements", () => {
+    expect(resolveMaxPanelHeight(viewport, "below")).toBe(900 - 16 - 12);
+    expect(resolveMaxPanelHeight(viewport, "above")).toBe(900 - 16 - 12);
   });
 
-  it("budgets space above the composer", () => {
-    expect(resolveMaxPanelHeight(viewport, { left: 200, top: 700, bottom: 740, width: 560 }, "above")).toBe(700 - 20);
-  });
-
-  it("returns null without an anchor", () => {
-    expect(resolveMaxPanelHeight(viewport, null, "float")).toBeNull();
-    expect(resolveMaxPanelHeight(viewport, { left: 200, top: 300, bottom: 340, width: 560 }, "float")).toBeNull();
+  it("budgets near-viewport height when floating", () => {
+    expect(resolveMaxPanelHeight(viewport, "float")).toBe(900 - 16 - 12);
   });
 
   it("budgets viewport minus margin for fullscreen", () => {
-    expect(resolveMaxPanelHeight(viewport, { left: 200, top: 300, bottom: 340, width: 560 }, "fullscreen")).toBe(
-      900 - 32,
-    );
+    expect(resolveMaxPanelHeight(viewport, "fullscreen")).toBe(900 - 32);
+  });
+
+  it("returns null for unusable viewports", () => {
+    expect(resolveMaxPanelHeight({ width: 1440, height: 0 }, "below")).toBeNull();
   });
 });
 

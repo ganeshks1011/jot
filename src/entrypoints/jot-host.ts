@@ -384,7 +384,7 @@ function createHost(): HostController {
     const g = resolveOverlayGeometry(viewport, anchor, fullscreenPinned ? viewport.height : height, compact);
     if (g.placement === "fullscreen") fullscreenPinned = true;
     lastPlacement = g.placement;
-    lastMaxPanelHeight = resolveMaxPanelHeight(viewport, anchor, g.placement);
+    lastMaxPanelHeight = resolveMaxPanelHeight(viewport, g.placement);
     if (g.placement === "fullscreen" || g.placement === "float" || !anchor) {
       lastConnectorX = null;
     } else {
@@ -1048,6 +1048,7 @@ function createHost(): HostController {
       html?: string | null;
       height?: number;
       compact?: boolean | null;
+      want?: number | null;
     } | null;
     if (!msg || typeof msg !== "object") return;
 
@@ -1064,14 +1065,20 @@ function createHost(): HostController {
       case "resize": {
         if (!iframe) break;
         lastCompact = msg.compact ?? false;
+        const measured = msg.height ?? 0;
+        // Placement + fullscreen decisions use the uncapped content height;
+        // measured (capped) height only sizes the frame. This breaks the
+        // feedback loop where a small cap kept reporting a small height and
+        // the panel never grew past it.
+        const want = msg.want ?? measured;
         // Let placement decide first: content past a third of the viewport
         // scales to fullscreen (pinned). Anchored panels keep the
         // content-driven height as before.
-        positionIframe(msg.height ?? 0, lastCompact);
+        positionIframe(want, lastCompact);
         if (lastPlacement === "fullscreen") break;
-        const height = Math.min(msg.height ?? 0, window.innerHeight - 24);
+        const height = Math.min(measured, window.innerHeight - 24);
         iframe.style.height = `${Math.max(160, height)}px`;
-        positionIframe(height, lastCompact);
+        positionIframe(want, lastCompact);
         break;
       }
       case "insert": {

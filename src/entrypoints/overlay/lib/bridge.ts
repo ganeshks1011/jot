@@ -54,7 +54,7 @@ export interface HostMetricsMessage {
 
 export type OverlayOutMessage =
   | { type: "ready" }
-  | { type: "resize"; height: number; compact?: boolean | null }
+  | { type: "resize"; height: number; compact?: boolean | null; want?: number | null }
   | { type: "insert"; text: string; html?: string | null }
   | { type: "insertLexical"; map: Record<string, string>; text: string; html?: string | null }
   | { type: "close" };
@@ -96,11 +96,12 @@ export function postReady(): void {
   postToParent({ type: "ready" });
 }
 
-export function postResize(compact?: boolean | null): void {
+export function postResize(compact?: boolean | null, want?: number | null): void {
   postToParent({
     type: "resize",
     height: Math.ceil(document.documentElement.scrollHeight),
     compact: compact ?? null,
+    want: want ?? null,
   });
 }
 

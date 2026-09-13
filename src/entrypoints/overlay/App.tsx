@@ -393,6 +393,9 @@ export default function App() {
     const chrome = card.scrollHeight - content.scrollHeight;
     const cap = Math.max(MIN_CONTENT_HEIGHT, maxPanelHeight - chrome);
     card.style.setProperty("--jot-content-max", `${Math.round(cap)}px`);
+    // Report uncapped want alongside: the host decides placement from content
+    // that wants to exist, not from the height the current cap allows.
+    postResize(!output, content.scrollHeight);
   }, [maxPanelHeight, output, status]);
 
   const close = useCallback(() => {

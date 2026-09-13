@@ -142,26 +142,20 @@ export function shouldUseFullscreen(viewport: ViewportSize, height: number): boo
 export const MIN_CONTENT_HEIGHT = 96;
 
 /**
- * Panel-level height budget: how tall the card may grow while keeping the
- * composer visible (panel sits flush against it, so the budget is the free
- * space on the placement side minus a viewport margin). Null when floating
- * (no anchor). The overlay falls back to its default cap.
+ * Panel-level height budget: how tall the card may grow. Grow-first policy:
+ * the budget derives from the viewport rather than the free space beside
+ * the anchor, so the panel overlaps page content instead of scrolling
+ * internally while viewport space sits unused. Placement still docks to
+ * the side with room (decided from uncapped content height); the budget
+ * only binds near viewport exhaustion. Null when the viewport itself is
+ * unusable; callers fall back to their default cap.
  */
-export function resolveMaxPanelHeight(
-  viewport: ViewportSize,
-  anchor: AnchorRect | null,
-  placement: OverlayPlacement,
-): number | null {
-  // Fullscreen budget: viewport minus margin, independent of the anchor.
-  // Content scrolls inside; header/footer stay pinned.
+export function resolveMaxPanelHeight(viewport: ViewportSize, placement: OverlayPlacement): number | null {
+  if (viewport.height <= 0) return null;
   if (placement === "fullscreen") {
     return Math.max(MIN_CONTENT_HEIGHT, viewport.height - FULLSCREEN_MARGIN * 2);
   }
-  if (!anchor || anchor.width <= 0 || placement === "float") return null;
-  if (placement === "below") {
-    return viewport.height - anchor.bottom - OVERLAY_PADDING;
-  }
-  return anchor.top - (OVERLAY_PADDING + IFRAME_MARGIN);
+  return Math.max(MIN_CONTENT_HEIGHT, viewport.height - OVERLAY_PADDING * 2 - IFRAME_MARGIN);
 }
 
 /** True when a CSS background carries no visible paint. */
