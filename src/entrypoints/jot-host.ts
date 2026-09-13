@@ -19,12 +19,10 @@ import {
   IFRAME_MARGIN,
   isDarkBackground,
   isTransparentBackground,
-  MODAL_CARD_WIDTH,
   type OverlayPlacement,
   pickOpaqueBackground,
   resolveMaxPanelHeight,
   resolveOverlayGeometry,
-  shouldPrePromptModal,
 } from "@/lib/overlayGeometry";
 import { detectMentionLabels } from "@/lib/redaction/detectors";
 import { hasRichFormatting, isMultilineText, sanitizeRichHtml } from "@/lib/richText";
@@ -318,9 +316,10 @@ function createHost(): HostController {
   let lastPlacement: OverlayPlacement = "float";
   // Panel height budget backing the overlay's content cap (null = fallback).
   let lastMaxPanelHeight: number | null = null;
-  // Once content trips the center-modal threshold, stay modal for the rest
-  // of the open session. Avoids flip-flop while streaming grows the panel.
-  let modalPinned = false;
+  // Once content trips the fullscreen threshold, stay fullscreen for the
+  // rest of the open session. Avoids flip-flop while streaming grows the
+  // panel.
+  let fullscreenPinned = false;
   // Card-relative x of the connector diamond (null = hidden). Recomputed
   // with every placement so it tracks the anchor box, not the card center.
   let lastConnectorX: number | null = null;
@@ -333,24 +332,31 @@ function createHost(): HostController {
     if (!iframe) return;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const anchor = snapshotAnchor();
-    // Pinned modal forces center geometry by presenting a full-height panel.
-    const g = resolveOverlayGeometry(viewport, anchor, modalPinned ? viewport.height : height, compact);
-    if (g.placement === "center") modalPinned = true;
+    // Pinned fullscreen forces fullscreen geometry by presenting a
+    // full-height panel.
+    const g = resolveOverlayGeometry(
+      viewport,
+      anchor,
+      fullscreenPinned ? viewport.height : height,
+      compact,
+    );
+    if (g.placement === "fullscreen") fullscreenPinned = true;
     lastPlacement = g.placement;
     lastMaxPanelHeight = resolveMaxPanelHeight(viewport, anchor, g.placement);
-    if (g.placement === "center" || g.placement === "float" || !anchor) {
+    if (g.placement === "fullscreen" || g.placement === "float" || !anchor) {
       lastConnectorX = null;
     } else {
       const centerX = anchor.left + anchor.width / 2 - g.left;
       lastConnectorX = Math.max(14, Math.min(centerX, g.cardWidth - 14));
     }
-    if (g.placement === "center") {
-      // Fullscreen frame hosts the dimmed backdrop; the card itself is
-      // centered inside the overlay document (800px max width).
-      iframe.style.width = `${viewport.width}px`;
-      iframe.style.height = `${viewport.height}px`;
-      iframe.style.left = "0px";
-      iframe.style.top = "0px";
+    if (g.placement === "fullscreen") {
+      // Shrink-wrapped frame around the centered card (no backdrop — the
+      // page stays interactive). Same margin math as anchored placements.
+      const cardHeight = g.cardHeight ?? height;
+      iframe.style.width = `${Math.round(g.frameWidth)}px`;
+      iframe.style.height = `${Math.round(cardHeight + IFRAME_MARGIN * 2)}px`;
+      iframe.style.left = `${Math.max(0, Math.round(g.left) - IFRAME_MARGIN)}px`;
+      iframe.style.top = `${Math.max(0, Math.round(g.top) - IFRAME_MARGIN)}px`;
       return;
     }
     iframe.style.width = `${Math.round(g.frameWidth)}px`;
@@ -594,7 +600,7 @@ function createHost(): HostController {
     frame.style.visibility = "visible";
     frame.style.opacity = "1";
     panelVisible = true;
-    modalPinned = false;
+    fullscreenPinned = false;
     lastCompact = true;
     lastConnectorX = null;
     attachReposition();
@@ -602,17 +608,10 @@ function createHost(): HostController {
     applySelectionHighlight();
     focusPanel();
 
-    // Pre-prompt decision from the captured input: long inputs open
-    // directly as a centered modal so the first paint is already detached.
-    // Anchored starts keep the minimum height; the first streaming resize
-    // can still trip the modal later (one-way upgrade, never flips back).
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const anchor = snapshotAnchor();
-    const estimateWidth = anchor && anchor.width > 0 ? anchor.width : MODAL_CARD_WIDTH;
-    if (shouldPrePromptModal(viewport, anchor, capturedText, estimateWidth, capturedHasFormatting)) {
-      modalPinned = true;
-    }
-    positionIframe(modalPinned ? viewport.height : 160, true);
+    // Every open starts as a small anchored overlay (overlap allowed); the
+    // first streaming resize can still trip fullscreen later (one-way
+    // upgrade, never flips back).
+    positionIframe(160, true);
     enableSmoothResize(frame);
 
     // Fast path: send init once the frame has loaded. The overlay also sends
@@ -975,10 +974,10 @@ function createHost(): HostController {
         if (!iframe) break;
         lastCompact = msg.compact ?? false;
         // Let placement decide first: content past a third of the viewport
-        // switches to (and pins) the fullscreen center modal. Anchored panels
-        // keep the content-driven height as before.
+        // scales to fullscreen (pinned). Anchored panels keep the
+        // content-driven height as before.
         positionIframe(msg.height ?? 0, lastCompact);
-        if (lastPlacement === "center") break;
+        if (lastPlacement === "fullscreen") break;
         const height = Math.min(msg.height ?? 0, window.innerHeight - 24);
         iframe.style.height = `${Math.max(160, height)}px`;
         positionIframe(height, lastCompact);
@@ -1049,7 +1048,7 @@ function createHost(): HostController {
     capturedHtml = null;
     capturedHasFormatting = false;
     capturedMultiline = false;
-    modalPinned = false;
+    fullscreenPinned = false;
     delete window.__jotHost;
   }
 

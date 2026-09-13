@@ -11,7 +11,7 @@
  * check here).
  */
 
-export type OverlayPlacement = "above" | "below" | "float" | "center";
+export type OverlayPlacement = "above" | "below" | "float" | "fullscreen";
 
 export interface OverlayInitMessage {
   type: "init";

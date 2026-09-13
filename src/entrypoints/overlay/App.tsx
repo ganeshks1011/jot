@@ -556,11 +556,11 @@ export default function App() {
   // bg or fg would pair a sampled color against a mismatched theme color.
   // Unset = theme styling untouched. Paired cards take the composer
   // background as their face so overlay and composer read as one.
-  // Detached center modals always use the theme surface (no composer tint).
+  // Detached fullscreen cards always use the theme surface (no composer tint).
   // The shadow is neutral and page-aware: white on dark pages, black on
   // light pages, falling back to the overlay's own theme.
-  const isCenter = placement === "center";
-  const paired = composerBg !== null && composerFg !== null && !isCenter;
+  const isFullscreen = placement === "fullscreen";
+  const paired = composerBg !== null && composerFg !== null && !isFullscreen;
   const overlayDark = typeof document !== "undefined" && document.documentElement.dataset.theme === "dark";
   const pageIsDark = pageDark ?? overlayDark;
   const cardVars = {
@@ -578,7 +578,7 @@ export default function App() {
     <Card
       ref={rootRef}
       style={cardVars}
-      className={`jot-card-glow relative w-full gap-2 overflow-visible rounded-[8px] px-3 pb-3 pt-1 backdrop-blur-xl${paired ? " jot-paired" : ""}${isCenter ? " jot-modal-card" : ""}`}
+      className={`jot-card-glow relative w-full gap-2 overflow-visible rounded-[8px] px-3 pb-3 pt-1 backdrop-blur-xl${paired ? " jot-paired" : ""}${isFullscreen ? " jot-fullscreen-card" : ""}`}
     >
       {placement === "below" && (
         <span
@@ -727,15 +727,9 @@ export default function App() {
     </Card>
   );
 
-  // Center modal: dimmed fullscreen backdrop (Escape/buttons only, no
-  // click-to-close), fixed-width card centered with internally scrolling
-  // content (capped by the host-provided modal budget).
-  if (isCenter) {
-    return (
-      <div className="jot-modal-backdrop">
-        <div className="jot-modal-inner">{card}</div>
-      </div>
-    );
-  }
+  // Fullscreen: the same card scaled up and centered by the host (no
+  // backdrop — the page stays interactive). Content scrolls inside via
+  // --jot-content-max (host-provided fullscreen budget); header/footer
+  // stay pinned. Escape/buttons only, no click-to-close (nothing to click).
   return card;
 }
