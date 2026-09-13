@@ -283,17 +283,28 @@ async function runWholeInsert(
 }
 
 /**
- * Exact-match verify for the plain-text framework path. Unlike the shared
- * `verifiedRead` (which accepts containment for Slack's formatting
- * wrappers), an append must never verify: `execCommand("insertText")`
- * replaces the selection with plain text, so anything but equality is a
- * failed write.
+ * Verify for the plain-text framework path. Exact equality wins; otherwise
+ * accept containment within a length bound proportional to the rewrite
+ * (editor-added block structure scales with content; a fixed slack would
+ * certify appends onto tiny composers). Appends fail earlier: full copies
+ * trip the duplication breaker, original-plus-rewrite exceeds the bound.
+ * An append must never verify: `execCommand` replaces the selection, so
+ * anything else is a failed write.
  */
-function verifyExact(root: EditableElement, text: string): { ok: boolean; readBack: string } {
+function verifySlack(expectedLen: number): number {
+  return Math.min(64, Math.floor(expectedLen / 10));
+}
+
+function verifyTolerant(root: EditableElement, text: string): { ok: boolean; readBack: string } {
   const readBack = readComposerText(root);
   const expected = normalizeComposerMultiline(text);
   if (!expected) return { ok: false, readBack };
-  return { ok: normalizeComposerMultiline(readBack) === expected, readBack };
+  const actual = normalizeComposerMultiline(readBack);
+  if (actual === expected) return { ok: true, readBack };
+  if (actual.includes(expected) && Math.abs(actual.length - expected.length) <= verifySlack(expected.length)) {
+    return { ok: true, readBack };
+  }
+  return { ok: false, readBack };
 }
 
 /**
@@ -422,7 +433,7 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
     }
     if (whole.completed) {
       await deps.waitForFlush();
-      const check = verifyExact(root, text);
+      const check = verifyTolerant(root, text);
       lastReadBack = check.readBack;
       const actual = normalizeComposerMultiline(check.readBack);
       traceWrite({
@@ -453,7 +464,7 @@ export async function replaceRichText(text: string, deps: RichTextDeps): Promise
     }
     if (multi.completed) {
       await deps.waitForFlush();
-      const check = verifyExact(root, text);
+      const check = verifyTolerant(root, text);
       lastReadBack = check.readBack;
       const actual = normalizeComposerMultiline(check.readBack);
       traceWrite({

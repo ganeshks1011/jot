@@ -158,6 +158,34 @@ describe("replaceRichText", () => {
     expect(JSON.stringify(result.diagnostics)).not.toContain("new text");
   });
 
+  it("accepts containment within a proportional length bound", async () => {
+    const base =
+      "The quick brown fox jumps over the lazy dog near the riverbank at dawn. " +
+      "The quick brown fox jumps over the lazy dog near the riverbank at dawn. " +
+      "The quick brown fox jumps over the lazy dog near the riverbank at dawn. " +
+      "The quick brown fox jumps over the lazy dog near the riverbank at dawn. ";
+    // Editor-added residue (~5 chars) on a ~290-char rewrite: within slack.
+    const { root, closest } = markedRoot("lexical", { innerText: `${base}coda` });
+    const execCommand = vi.fn(() => true); // claims success, changes nothing
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText(base, d);
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.strategy).toBe("exec");
+  });
+
+  it("rejects containment beyond the proportional bound", async () => {
+    const base =
+      "The quick brown fox jumps over the lazy dog near the riverbank at dawn. " +
+      "The quick brown fox jumps over the lazy dog near the riverbank at dawn. ";
+    const prefix = "Leftover original preamble that dwarfs the tolerance bound entirely factory. ";
+    const { root, closest } = markedRoot("lexical", { innerText: `${prefix}${base}` });
+    const execCommand = vi.fn(() => true); // claims success, changes nothing
+    const d = deps({ field: root, closestFromField: closest, execCommand });
+    const result = await replaceRichText(base, d);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics.attempts).toBe(3);
+  });
+
   it("falls back to line-by-line insert when whole-text exec fails", async () => {
     const { root, closest } = markedRoot("prosemirror", { innerText: "old" });
     const lines: string[] = [];
