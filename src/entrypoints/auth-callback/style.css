@@ -8,6 +8,10 @@
 @import "@heroui/styles/themes/default/variables.css" layer(theme);
 @import "@heroui/styles/utilities";
 
+/* Class-based dark mode: dark: utilities follow the .dark class managed
+   by the theme toggle, not the OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   :root {
     --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
