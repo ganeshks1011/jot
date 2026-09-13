@@ -15,6 +15,7 @@ import {
   splitRunsByLines,
 } from "@/lib/editors/slack";
 import { buildInitKey, shouldSendInit } from "@/lib/initHandshake";
+import { captureLexical, commitLexicalMap, type LexicalCapture } from "@/lib/lexical";
 import {
   IFRAME_MARGIN,
   isDarkBackground,
@@ -99,6 +100,13 @@ function createHost(): HostController {
   let capturedHasFormatting = false;
   let capturedMultiline = false;
   /**
+   * Live Lexical capture (instance + state snapshot + text nodes) when the
+   * focused field sits in a Lexical editor. Enables the keyed rewrite flow
+   * (structure-preserving commit); null everywhere else. Cleared on destroy
+   * with everything else.
+   */
+  let capturedLexical: LexicalCapture | null = null;
+  /**
    * The visible bordered box for highlight + anchoring. Usually the field
    * itself; for framework editors (Lexical, Slack) it is the bordered
    * ancestor wrapper. Resolved once per open; null for plain selections.
@@ -161,6 +169,7 @@ function createHost(): HostController {
     capturedHtml = null;
     capturedHasFormatting = false;
     capturedMultiline = false;
+    capturedLexical = null;
 
     // Resolve the target at invocation time - there is no focus tracking
     // between invocations (that would require a persistent script).
@@ -187,6 +196,9 @@ function createHost(): HostController {
       if (isSlackComposer(window.location.hostname)) {
         capturedPills = collectMentionPills(activeField);
       }
+      // Lexical keyed flow: snapshot the live editor state when present.
+      // Absence simply keeps the existing text-insert path.
+      capturedLexical = captureLexical(activeField);
       return;
     }
 
@@ -441,6 +453,7 @@ function createHost(): HostController {
         html: capturedHtml,
         hasFormatting: capturedHasFormatting,
         multiline: capturedMultiline,
+        lexicalNodes: capturedLexical ? capturedLexical.nodes : null,
       },
       "*",
     );
@@ -817,6 +830,58 @@ function createHost(): HostController {
   }
 
   /**
+   * Keyed Lexical commit: apply an id->text map through the live editor
+   * instance so structure (lists, paragraphs, inline formats) survives as
+   * data. Re-resolves the instance at insert time (focus has moved since
+   * capture); falls back to false when no instance is usable, in which
+   * case the caller uses the text path. A failed commit best-effort
+   * restores the pre-write snapshot so failure leaves the editor intact.
+   */
+  function insertLexicalMap(map: Record<string, string>): {
+    ok: boolean;
+    diagnostics?: SlackWriteDiagnostics;
+  } {
+    const ids = Object.keys(map);
+    if (ids.length === 0) return { ok: false };
+    const fresh = captureLexical(activeField);
+    if (!fresh) return { ok: false };
+    const sumTexts = (nodes: Array<{ text: string }>): number => {
+      let total = 0;
+      for (const n of nodes) total += n.text.length;
+      return total;
+    };
+    const preLen = sumTexts(fresh.nodes);
+    const expectedLen = sumTexts(ids.map((id) => ({ text: typeof map[id] === "string" ? (map[id] as string) : "" })));
+    const diag = (ok: boolean, postLen: number): SlackWriteDiagnostics => ({
+      strategy: ok ? "exec" : null,
+      tag: "lexical",
+      preLen,
+      postLen,
+      expectedLen,
+      attempts: 1,
+    });
+    if (!commitLexicalMap(fresh.editor, fresh.state, map)) {
+      // Best-effort restore from the pre-write snapshot, then report.
+      try {
+        const snapshotNodes = fresh.nodes;
+        const cur = captureLexical(activeField);
+        if (cur && snapshotNodes.length > 0) {
+          const restore: Record<string, string> = {};
+          for (const n of snapshotNodes) restore[n.id] = n.text;
+          commitLexicalMap(cur.editor, cur.state, restore);
+        }
+      } catch {
+        // Restore is best effort; the failure report below is what matters.
+      }
+      const after = captureLexical(activeField);
+      return { ok: false, diagnostics: diag(false, after ? sumTexts(after.nodes) : preLen) };
+    }
+    const after = captureLexical(activeField);
+    capturedRange = null;
+    return { ok: true, diagnostics: diag(true, after ? sumTexts(after.nodes) : expectedLen) };
+  }
+
+  /**
    * Insert into the host field. Returns whether the write verified.
    * Non-Slack behavior is unchanged (always treated as success).
    * `html` is the sanitized preserve-only fragment; textarea/input always
@@ -1069,6 +1134,63 @@ function createHost(): HostController {
         }
         break;
       }
+      case "insertLexical": {
+        const rawMap = (msg as { map?: unknown }).map;
+        const map: Record<string, string> = {};
+        if (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) {
+          for (const [id, value] of Object.entries(rawMap as Record<string, unknown>)) {
+            if (typeof value === "string") map[id] = value;
+          }
+        }
+        const fallback = typeof msg.text === "string" ? msg.text : "";
+        const lexicalHtml = typeof msg.html === "string" ? msg.html : null;
+        if (Object.keys(map).length === 0) {
+          // Nothing keyed to apply: run the plain text verdict flow when
+          // there is fallback text, else there is nothing to do.
+          if (!fallback) {
+            closePanel();
+            break;
+          }
+          if (insertInFlight) break;
+          insertInFlight = true;
+          try {
+            const outcome = await insertText(fallback, lexicalHtml);
+            if (outcome.diagnostics) {
+              postInsertResult(outcome.ok, outcome.diagnostics);
+            }
+            if (outcome.ok) closePanel();
+            else postInsertFailed(fallback, outcome.diagnostics, lexicalHtml);
+          } finally {
+            insertInFlight = false;
+          }
+          break;
+        }
+        if (insertInFlight) break; // serialized: never interleave runs
+        insertInFlight = true;
+        try {
+          const outcome = insertLexicalMap(map);
+          if (outcome.diagnostics) {
+            postInsertResult(outcome.ok, outcome.diagnostics);
+          }
+          if (outcome.ok) {
+            closePanel();
+          } else if (fallback) {
+            // Instance path failed: fall back to the text path once before
+            // reporting, so a transient instance miss still lands the text.
+            const retry = await insertText(fallback, lexicalHtml);
+            if (retry.diagnostics) {
+              postInsertResult(retry.ok, retry.diagnostics);
+            }
+            if (retry.ok) closePanel();
+            else postInsertFailed(fallback, retry.diagnostics, lexicalHtml);
+          } else {
+            postInsertFailed("", outcome.diagnostics, lexicalHtml);
+          }
+        } finally {
+          insertInFlight = false;
+        }
+        break;
+      }
       case "close": {
         closePanel();
         break;
@@ -1102,6 +1224,7 @@ function createHost(): HostController {
     capturedHtml = null;
     capturedHasFormatting = false;
     capturedMultiline = false;
+    capturedLexical = null;
     fullscreenPinned = false;
     delete window.__jotHost;
   }

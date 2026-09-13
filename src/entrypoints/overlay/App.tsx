@@ -3,11 +3,12 @@ import { Card } from "@heroui/react/card";
 import { Chip } from "@heroui/react/chip";
 import { Kbd } from "@heroui/react/kbd";
 import { Tooltip } from "@heroui/react/tooltip";
+import type { LexicalTextNode } from "@wurkflo/shared";
 import { Check, Settings as SettingsIcon, X } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import { type EditorType, editorTypeFor, siteLabelFor, track } from "@/lib/analytics";
-import type { ProviderError } from "@/lib/api";
+import { ProviderError, rewriteLexicalNodes } from "@/lib/api";
 import { WURKFLO_ORIGIN } from "@/lib/config";
 import { isSlackComposer } from "@/lib/editors/slack";
 import { MIN_CONTENT_HEIGHT } from "@/lib/overlayGeometry";
@@ -80,7 +81,14 @@ export default function App() {
   const [composerFg, setComposerFg] = useState<string | null>(null);
   const [pageDark, setPageDark] = useState<boolean | null>(null);
   const [connectorX, setConnectorX] = useState<number | null>(null);
+  // Lexical keyed flow: index-path nodes from the host for the structure-
+  // preserving rewrite. The result map drives `insertLexical`; absent
+  // nodes (or any keyed failure) keep the existing string flow. Refs only:
+  // every map arrival also sets output, which re-renders.
   const [maxPanelHeight, setMaxPanelHeight] = useState<number | null>(null);
+  const nodesRef = useRef<LexicalTextNode[] | null>(null);
+  const mapRef = useRef<Record<string, string> | null>(null);
+  const keyedBusyRef = useRef(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const siteRef = useRef<string | undefined>(undefined);
@@ -107,16 +115,72 @@ export default function App() {
   // Rewrite the captured source, applying the input box text as a tweak
   // instruction on top. Formatting HTML travels alongside the plain source
   // so the model can preserve tags it otherwise could not see.
+  // Lexical keyed flow first when the host supplied nodes: structure is
+  // rewritten by id and committed atomically by the host instance.
+  const runKeyedGenerate = useCallback(
+    async (nodes: LexicalTextNode[], followUp?: string) => {
+      if (keyedBusyRef.current || nodes.length === 0) return;
+      keyedBusyRef.current = true;
+      busyRef.current = true;
+      setStatus("generating");
+      setError(null);
+      setOutput("");
+      mapRef.current = null;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      let handedOff = false;
+      try {
+        const map = await rewriteLexicalNodes(nodes, {
+          source,
+          site: siteRef.current,
+          followUp,
+          handlers: { signal: controller.signal },
+        });
+        mapRef.current = map;
+        setOutput(nodes.map((n) => map[n.id] ?? n.text).join("\n\n"));
+        setStatus("output");
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") return;
+        // Keyed failure falls through to the string flow below when the
+        // run was the initial auto-generate; tweaks surface the error.
+        if (!followUp) {
+          nodesRef.current = null;
+          mapRef.current = null;
+          setStatus("idle");
+          keyedBusyRef.current = false;
+          handedOff = true;
+          void runGenerate(source, undefined, sourceHtml);
+          return;
+        }
+        setError(err instanceof ProviderError ? err : new ProviderError("network", "Something went wrong."));
+        setOutput("");
+        setStatus("output");
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+        // A handed-off string run owns the busy flag from here.
+        if (!handedOff) busyRef.current = false;
+        keyedBusyRef.current = false;
+      }
+    },
+    [source, sourceHtml, runGenerate, abortRef, busyRef],
+  );
+
   const generate = useCallback(
     (followUp?: string) => {
       if (!source.trim()) return;
-      if (busyRef.current) {
+      if (busyRef.current || keyedBusyRef.current) {
         pendingRef.current = { text: source, followUp, html: sourceHtml };
         return;
       }
+      const nodes = nodesRef.current;
+      if (nodes && nodes.length > 0) {
+        void runKeyedGenerate(nodes, followUp);
+        return;
+      }
+      mapRef.current = null;
       void runGenerate(source, followUp, sourceHtml);
     },
-    [source, sourceHtml, runGenerate],
+    [source, sourceHtml, runGenerate, runKeyedGenerate],
   );
 
   const copyFailedText = useCallback(async () => {
@@ -353,6 +417,9 @@ export default function App() {
       setSource(text);
       setSourceHtml(formatted ? html : null);
       setHasFormatting(formatted);
+      const keyed = msg.lexicalNodes && msg.lexicalNodes.length > 0 ? msg.lexicalNodes : null;
+      nodesRef.current = keyed;
+      mapRef.current = null;
       setPlacement(msg.placement ?? "float");
       setMaxPanelHeight(msg.maxPanelHeight ?? null);
       setComposerBg(msg.composerBg ?? null);
@@ -376,13 +443,21 @@ export default function App() {
         return;
       }
       // If a generation is already in flight (e.g., duplicate init), queue rather than dropping.
-      if (busyRef.current) {
+      if (busyRef.current || keyedBusyRef.current) {
+        // Queued runs take the string flow; drop keyed state so a stale
+        // map can never drive the insert path.
+        nodesRef.current = null;
+        mapRef.current = null;
         pendingRef.current = { text, html: formatted ? html : null };
         // Abort current to let the correct text run next; runGenerate's finally will pick up pending.
         abortRef.current?.abort();
         return;
       }
-      void runGenerate(text, undefined, formatted ? html : null);
+      if (keyed) {
+        void runKeyedGenerate(keyed);
+      } else {
+        void runGenerate(text, undefined, formatted ? html : null);
+      }
       // Focus the selected tab once the DOM settles.
       setTimeout(focusInitial, 60);
     });
@@ -408,6 +483,34 @@ export default function App() {
   const insertText = useCallback(
     (text: string) => {
       if (!text) return;
+      const keyedMap = mapRef.current;
+      if (keyedMap) {
+        // Keyed flow: the host commits the map through the live Lexical
+        // instance; `text` is the plain fallback for instance misses.
+        postToParent({ type: "insertLexical", map: keyedMap, text });
+        setInserted(true);
+        void track("rewrite_applied", {
+          site: siteLabelFor(siteRef.current),
+          editor_type: editorRef.current,
+          confirmed: false,
+        });
+        if (insertedTimer.current) clearTimeout(insertedTimer.current);
+        if (verdictTimer.current) clearTimeout(verdictTimer.current);
+        // Verified targets: the host closes on success and holds the panel
+        // open (copy/retry UI) on failure — never auto-close under an
+        // in-flight write. The 15s timer backstops a dead host only;
+        // worst-case writes settle in ~2s.
+        if (verifiedWriteRef.current) {
+          verdictTimer.current = setTimeout(() => {
+            postToParent({ type: "close" });
+          }, 15000);
+          return;
+        }
+        insertedTimer.current = setTimeout(() => {
+          postToParent({ type: "close" });
+        }, 700);
+        return;
+      }
       // Formatted output travels as both: plain text for textarea/Slack and
       // the sanitized HTML fragment for rich contenteditables. The host picks
       // per target; text-only hosts ignore `html` entirely.

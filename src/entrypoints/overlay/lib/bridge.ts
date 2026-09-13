@@ -11,6 +11,8 @@
  * check here).
  */
 
+import type { LexicalTextNode } from "@wurkflo/shared";
+
 export type OverlayPlacement = "above" | "below" | "float" | "fullscreen";
 
 export interface OverlayInitMessage {
@@ -38,6 +40,8 @@ export interface OverlayInitMessage {
   hasFormatting?: boolean | null;
   /** True when the capture spanned multiple lines. */
   multiline?: boolean | null;
+  /** Lexical index-path text nodes for the keyed rewrite flow (if any). */
+  lexicalNodes?: LexicalTextNode[] | null;
 }
 
 /** Host → overlay: refreshed placement + panel budget after viewport resize. */
@@ -52,6 +56,7 @@ export type OverlayOutMessage =
   | { type: "ready" }
   | { type: "resize"; height: number; compact?: boolean | null }
   | { type: "insert"; text: string; html?: string | null }
+  | { type: "insertLexical"; map: Record<string, string>; text: string }
   | { type: "close" };
 
 /** Text-free write metrics (lengths/tags only, never message content). */
