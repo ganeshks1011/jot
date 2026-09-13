@@ -27,6 +27,7 @@ import {
   postToParent,
 } from "./lib/bridge";
 import { copyHtml } from "./lib/clipboard";
+import { buildKeyedHtml } from "./lib/keyedHtml";
 import { type FocusZone, selectHelperText, zoneForTarget } from "./lib/helperText";
 import { startReadyRetry } from "./lib/readyRetry";
 import { useGeneration } from "./lib/useGeneration";
@@ -88,6 +89,9 @@ export default function App() {
   const nodesRef = useRef<LexicalTextNode[] | null>(null);
   const mapRef = useRef<Record<string, string> | null>(null);
   const keyedBusyRef = useRef(false);
+  // Built keyed HTML for preview, clipboard flavors, and the insert
+  // payload: one source so all three surfaces always agree.
+  const [keyedHtml, setKeyedHtml] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const siteRef = useRef<string | undefined>(undefined);
@@ -125,6 +129,7 @@ export default function App() {
       setError(null);
       setOutput("");
       mapRef.current = null;
+      setKeyedHtml(null);
       const controller = new AbortController();
       abortRef.current = controller;
       let handedOff = false;
@@ -136,6 +141,7 @@ export default function App() {
           handlers: { signal: controller.signal },
         });
         mapRef.current = map;
+        setKeyedHtml(buildKeyedHtml(nodes, map));
         setOutput(nodes.map((n) => map[n.id] ?? n.text).join("\n\n"));
         setStatus("output");
       } catch (err) {
@@ -145,6 +151,7 @@ export default function App() {
         if (!followUp) {
           nodesRef.current = null;
           mapRef.current = null;
+          setKeyedHtml(null);
           setStatus("idle");
           keyedBusyRef.current = false;
           handedOff = true;
@@ -153,6 +160,7 @@ export default function App() {
         }
         setError(err instanceof ProviderError ? err : new ProviderError("network", "Something went wrong."));
         setOutput("");
+        setKeyedHtml(null);
         setStatus("output");
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
@@ -177,6 +185,7 @@ export default function App() {
         return;
       }
       mapRef.current = null;
+      setKeyedHtml(null);
       void runGenerate(source, followUp, sourceHtml);
     },
     [source, sourceHtml, runGenerate, runKeyedGenerate],
@@ -185,7 +194,7 @@ export default function App() {
   const copyFailedText = useCallback(async () => {
     if (!failedText) return;
     const ok = await copyHtml(
-      failedHtml,
+      failedHtml ?? keyedHtml,
       failedText,
       typeof navigator !== "undefined" ? (navigator.clipboard ?? undefined) : undefined,
       document,
@@ -198,7 +207,7 @@ export default function App() {
         editor_type: editorRef.current,
       });
     }
-  }, [failedText, failedHtml]);
+  }, [failedText, failedHtml, keyedHtml]);
 
   const retryFailed = useCallback(() => {
     setFailedText(null);
@@ -230,10 +239,11 @@ export default function App() {
 
   const copyOutput = useCallback(async () => {
     if (!output) return;
-    // Clipboard takes both flavors whenever the output carries tags: rich
+    // Clipboard takes both flavors whenever HTML is available: the keyed
+    // preview build first, else tags carried by the output itself. Rich
     // editors paste HTML, plain fields take the block-aware plain
     // conversion (tags dropped).
-    const outputHtml = /<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null;
+    const outputHtml = keyedHtml ?? (/<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null);
     const plain = outputHtml ? htmlToPlainText(output) : output;
     // Clipboard may be denied by the page's permissions policy (e.g. Google
     // Chat). Degrade to a notice, never block the insert path.
@@ -253,7 +263,7 @@ export default function App() {
     }
     if (copiedHintTimer.current) clearTimeout(copiedHintTimer.current);
     copiedHintTimer.current = setTimeout(() => setCopiedHint(null), 2000);
-  }, [output]);
+  }, [output, keyedHtml]);
 
   // Move keyboard focus into the overlay on open so arrows/Enter work
   // immediately (the host focuses the frame; cross-origin-safe). Focus lands
@@ -416,9 +426,10 @@ export default function App() {
       editorRef.current = editorTypeFor(msg.fieldType);
       setSource(text);
       setSourceHtml(formatted ? html : null);
-      const keyed = msg.lexicalNodes && msg.lexicalNodes.length > 0 ? msg.lexicalNodes : null;
-      nodesRef.current = keyed;
+      const nodes = msg.lexicalNodes && msg.lexicalNodes.length > 0 ? msg.lexicalNodes : null;
+      nodesRef.current = nodes;
       mapRef.current = null;
+      setKeyedHtml(null);
       setPlacement(msg.placement ?? "float");
       setMaxPanelHeight(msg.maxPanelHeight ?? null);
       setComposerBg(msg.composerBg ?? null);
@@ -452,8 +463,8 @@ export default function App() {
         abortRef.current?.abort();
         return;
       }
-      if (keyed) {
-        void runKeyedGenerate(keyed);
+      if (nodes) {
+        void runKeyedGenerate(nodes);
       } else {
         void runGenerate(text, undefined, formatted ? html : null);
       }
@@ -485,8 +496,9 @@ export default function App() {
       const keyedMap = mapRef.current;
       if (keyedMap) {
         // Keyed flow: the host commits the map through the live Lexical
-        // instance; `text` is the plain fallback for instance misses.
-        postToParent({ type: "insertLexical", map: keyedMap, text });
+        // instance; `text` is the plain fallback and `html` the built
+        // preview HTML for rich fallback and failure-panel paste.
+        postToParent({ type: "insertLexical", map: keyedMap, text, html: keyedHtml });
         setInserted(true);
         void track("rewrite_applied", {
           site: siteLabelFor(siteRef.current),
@@ -806,7 +818,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <ContentBox output={output} status={status} />
+          <ContentBox output={output} status={status} htmlPreview={keyedHtml} />
         )}
         {(() => {
           const kind = selectHelperText({

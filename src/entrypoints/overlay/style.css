@@ -176,6 +176,39 @@ body {
   transition: height 180ms ease;
 }
 
+/* Restored list structure inside the HTML preview. Tailwind preflight
+   strips bullets/numbers and indentation; these scoped rules bring back
+   standard markers without leaking outside #jot-content. */
+#jot-content ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+#jot-content ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+#jot-content li {
+  margin: 0.125rem 0;
+}
+#jot-content li::marker {
+  color: var(--jot-cfg);
+}
+#jot-content p {
+  margin: 0.25rem 0;
+}
+#jot-content p:first-child,
+#jot-content ul:first-child,
+#jot-content ol:first-child {
+  margin-top: 0;
+}
+#jot-content p:last-child,
+#jot-content ul:last-child,
+#jot-content ol:last-child {
+  margin-bottom: 0;
+}
+
 /* Tweak box: borderless wash tinted from the composer pair. Scoped to
    paired cards so the unpaired theme look stays byte-identical. */
 .jot-paired #jot-feedback,

@@ -56,7 +56,7 @@ export type OverlayOutMessage =
   | { type: "ready" }
   | { type: "resize"; height: number; compact?: boolean | null }
   | { type: "insert"; text: string; html?: string | null }
-  | { type: "insertLexical"; map: Record<string, string>; text: string }
+  | { type: "insertLexical"; map: Record<string, string>; text: string; html?: string | null }
   | { type: "close" };
 
 /** Text-free write metrics (lengths/tags only, never message content). */

@@ -7,9 +7,11 @@ export type ContentStatus = "idle" | "generating" | "output";
 interface ContentBoxProps {
   output: string;
   status: ContentStatus;
+  /** Prebuilt sanitized HTML (keyed flow); overrides output-derived preview. */
+  htmlPreview?: string | null;
 }
 
-export function ContentBox({ output, status }: ContentBoxProps) {
+export function ContentBox({ output, status, htmlPreview }: ContentBoxProps) {
   // Skeletons only until the first streamed tokens land; after that the
   // partial text renders live in the read-only box below.
   if (status === "generating" && !output) {
@@ -32,11 +34,15 @@ export function ContentBox({ output, status }: ContentBoxProps) {
 
   // Preserve-only HTML preview: sanitized allowlist fragment, read-only.
   // Keyed off the output content itself (not the capture): whatever tagged
-  // HTML the overlay shows is exactly what copy/insert carry. Keeps the
-  // jot-content identity so focus, Enter-to-insert, and the result cap all
-  // behave exactly like the plain-text box.
-  if (/<[a-zA-Z]/.test(output)) {
-    const clean = sanitizeRichHtml(output);
+  // HTML the overlay shows is exactly what copy/insert carry. A prebuilt
+  // keyed preview wins over output-derived HTML. Keeps the jot-content
+  // identity so focus, Enter-to-insert, and the result cap all behave
+  // exactly like the plain-text box.
+  const preview =
+    htmlPreview?.trim() ||
+    (/<[a-zA-Z]/.test(output) ? sanitizeRichHtml(output) : null) ||
+    null;
+  if (preview) {
     return (
       <div
         id="jot-content"
@@ -45,7 +51,7 @@ export function ContentBox({ output, status }: ContentBoxProps) {
         aria-label="Rewritten text"
         aria-readonly="true"
         className="w-full px-1"
-        dangerouslySetInnerHTML={{ __html: clean }}
+        dangerouslySetInnerHTML={{ __html: preview }}
       />
     );
   }
