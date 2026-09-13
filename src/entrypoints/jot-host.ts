@@ -327,6 +327,10 @@ function createHost(): HostController {
   // false with its first content resize. Remembered so scroll repositions
   // keep the current width instead of jumping prematurely.
   let lastCompact = true;
+  // True while a verified write is pending. A second insert arriving
+  // mid-write (double-Enter, timer race) is ignored instead of interleaved:
+  // overlapping runs on a mutating framework editor stack duplicate copies.
+  let insertInFlight = false;
 
   function positionIframe(height: number, compact = false): void {
     if (!iframe) return;
@@ -334,12 +338,7 @@ function createHost(): HostController {
     const anchor = snapshotAnchor();
     // Pinned fullscreen forces fullscreen geometry by presenting a
     // full-height panel.
-    const g = resolveOverlayGeometry(
-      viewport,
-      anchor,
-      fullscreenPinned ? viewport.height : height,
-      compact,
-    );
+    const g = resolveOverlayGeometry(viewport, anchor, fullscreenPinned ? viewport.height : height, compact);
     if (g.placement === "fullscreen") fullscreenPinned = true;
     lastPlacement = g.placement;
     lastMaxPanelHeight = resolveMaxPanelHeight(viewport, anchor, g.placement);
@@ -393,6 +392,12 @@ function createHost(): HostController {
         ? "selection"
         : null;
     const colors = sampleComposerColors();
+    // The overlay awaits a host verdict instead of auto-closing when the
+    // target takes a verified write (Slack, framework editors). Focus has
+    // already moved into the panel, so resolve from the captured field.
+    const verifiedWrite =
+      isSlackComposer(window.location.hostname) ||
+      resolveFrameworkRoot(liveRichTextDeps(document, window, activeField)) !== null;
     iframe.contentWindow?.postMessage(
       {
         type: "init",
@@ -405,6 +410,7 @@ function createHost(): HostController {
         composerFg: colors.fg,
         pageDark: colors.pageDark,
         connectorX: lastConnectorX,
+        verifiedWrite,
         html: capturedHtml,
         hasFormatting: capturedHasFormatting,
         multiline: capturedMultiline,
@@ -985,34 +991,50 @@ function createHost(): HostController {
       }
       case "insert": {
         if (typeof msg.text === "string") {
+          if (insertInFlight) break; // serialized: never interleave runs
           const html = typeof msg.html === "string" ? msg.html : null;
           if (isSlackComposer(window.location.hostname)) {
             // Verified write; on failure the panel stays open so the user
             // can copy the rewrite instead of silently losing it.
             // Slack composers take plain text (pills rebuilt from labels).
-            const outcome = await insertText(msg.text);
-            if (outcome.diagnostics) {
-              postInsertResult(outcome.ok, outcome.diagnostics);
+            insertInFlight = true;
+            try {
+              const outcome = await insertText(msg.text);
+              if (outcome.diagnostics) {
+                postInsertResult(outcome.ok, outcome.diagnostics);
+              }
+              if (outcome.ok) closePanel();
+              else postInsertFailed(msg.text, outcome.diagnostics);
+            } finally {
+              insertInFlight = false;
             }
-            if (outcome.ok) closePanel();
-            else postInsertFailed(msg.text, outcome.diagnostics);
             break;
           }
           const richTextDeps = liveRichTextDeps(document, window, activeField);
           if (resolveFrameworkRoot(richTextDeps)) {
             // Same verified-write contract as Slack: framework editors get
             // plain text and the panel stays open on failure.
-            const outcome = await insertText(msg.text);
-            if (outcome.diagnostics) {
-              postInsertResult(outcome.ok, outcome.diagnostics);
+            insertInFlight = true;
+            try {
+              const outcome = await insertText(msg.text);
+              if (outcome.diagnostics) {
+                postInsertResult(outcome.ok, outcome.diagnostics);
+              }
+              if (outcome.ok) closePanel();
+              else postInsertFailed(msg.text, outcome.diagnostics);
+            } finally {
+              insertInFlight = false;
             }
-            if (outcome.ok) closePanel();
-            else postInsertFailed(msg.text, outcome.diagnostics);
             break;
           }
-          await insertText(msg.text, html);
+          const outcome = await insertText(msg.text, html);
+          if (outcome.diagnostics) {
+            postInsertResult(outcome.ok, outcome.diagnostics);
+          }
+          closePanel();
+        } else {
+          closePanel();
         }
-        closePanel();
         break;
       }
       case "close": {

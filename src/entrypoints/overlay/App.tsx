@@ -85,6 +85,10 @@ export default function App() {
   const siteRef = useRef<string | undefined>(undefined);
   const editorRef = useRef<EditorType>("unknown");
   const insertedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const verdictTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // True when the host reports a write verdict for this target (Slack,
+  // framework editors): close/hold-open follows the verdict, never a timer.
+  const verifiedWriteRef = useRef(false);
   const {
     output,
     setOutput,
@@ -279,16 +283,26 @@ export default function App() {
     return () => clearTimeout(t);
   }, []);
 
+  const close = useCallback(() => {
+    // Stop an in-flight stream so it can't write state after dismissal.
+    abortRef.current?.abort();
+    postToParent({ type: "close" });
+  }, []);
+
   useEffect(() => {
     const unsubs = [
       onInsertFailed((msg) => {
+        if (verdictTimer.current) clearTimeout(verdictTimer.current);
         setFailedText(msg.text);
         setFailedMetrics(describeMetrics(msg));
         setCopied(false);
         setInserted(false);
       }),
       onInsertResult((msg) => {
-        // Success closes from the host side; keep a console trail anyway.
+        if (verdictTimer.current) clearTimeout(verdictTimer.current);
+        // Success closes from the host side; mirror it here in case the
+        // host already tore down (or this verdict arrived first).
+        // Keep a console trail anyway.
         try {
           console.debug("[jot] insert-result", {
             ok: msg.ok,
@@ -302,10 +316,11 @@ export default function App() {
         } catch {
           // Logging must never break the panel.
         }
+        if (msg.ok) close();
       }),
     ];
     return () => unsubs.forEach((unsub) => unsub());
-  }, [describeMetrics]);
+  }, [describeMetrics, close]);
 
   const lastInitKeyRef = useRef<string>("");
   const lastInitAtRef = useRef<number>(0);
@@ -338,6 +353,7 @@ export default function App() {
       setComposerFg(msg.composerFg ?? null);
       setPageDark(msg.pageDark ?? null);
       setConnectorX(msg.connectorX ?? null);
+      verifiedWriteRef.current = msg.verifiedWrite ?? false;
       try {
         // Theme colors only. Diagnostic trail for background pairing issues.
         console.debug("[jot] composer colors", {
@@ -402,22 +418,23 @@ export default function App() {
         confirmed,
       });
       if (insertedTimer.current) clearTimeout(insertedTimer.current);
-      // Slack write-back is verified by the host: success closes the panel
-      // from the host side, failure reports insert-failed. Auto-closing here
-      // would destroy the panel (and its copy/retry UI) before the verdict.
-      if (isSlackComposer(siteRef.current ?? "")) return;
+      if (verdictTimer.current) clearTimeout(verdictTimer.current);
+      // Verified targets: the host closes on success and holds the panel
+      // open (copy/retry UI) on failure — never auto-close under an
+      // in-flight write. The 15s timer backstops a dead host only;
+      // worst-case writes settle in ~2s.
+      if (verifiedWriteRef.current) {
+        verdictTimer.current = setTimeout(() => {
+          postToParent({ type: "close" });
+        }, 15000);
+        return;
+      }
       insertedTimer.current = setTimeout(() => {
         postToParent({ type: "close" });
       }, 700);
     },
     [hasFormatting],
   );
-
-  const close = useCallback(() => {
-    // Stop an in-flight stream so it can't write state after dismissal.
-    abortRef.current?.abort();
-    postToParent({ type: "close" });
-  }, []);
 
   // Abort any in-flight stream when the overlay unmounts.
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -548,6 +565,7 @@ export default function App() {
   useEffect(
     () => () => {
       if (insertedTimer.current) clearTimeout(insertedTimer.current);
+      if (verdictTimer.current) clearTimeout(verdictTimer.current);
     },
     [],
   );

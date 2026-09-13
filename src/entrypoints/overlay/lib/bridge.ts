@@ -28,6 +28,8 @@ export interface OverlayInitMessage {
   pageDark?: boolean | null;
   /** Card-relative x of the connector diamond (null = hidden). */
   connectorX?: number | null;
+  /** True when the host reports a write verdict (no blind auto-close). */
+  verifiedWrite?: boolean | null;
   /** Panel height budget in px (null = default cap). */
   maxPanelHeight?: number | null;
   /** Sanitized HTML fragment when the capture carried formatting. */
