@@ -51,7 +51,9 @@ export default defineConfig({
     // wurkflo.app/jot — allow style/font from Google with fallback to system.
     // connect-src https: is needed for provider relays (DeepSeek, OpenAI, etc.).
     // Plaintext http is scoped to loopback hostnames for local model servers
-    // (Ollama, LM Studio) so API keys never leave over cleartext elsewhere.
+    // (Ollama :11434, LM Studio :1234) so API keys never leave over cleartext
+    // elsewhere. A bare `http://localhost` host-source only matches the
+    // default port 80, so `:*` (any port) is required for loopback servers.
     // NOTE: no bracketed IPv6 entry — Chromium's CSP parser rejects
     // `http://[::1]/*` as an invalid source and logs a console warning.
     // IPv6 loopback stays supported in the relay allowlist (src/lib/net.ts),
@@ -59,7 +61,7 @@ export default defineConfig({
     // provider traffic goes through the background service worker.
     content_security_policy: {
       extension_pages:
-        "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https: http://localhost/* http://127.0.0.1/* wss:; worker-src 'self'",
+        "script-src 'self'; object-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' https: http://localhost:*/* http://127.0.0.1:*/* wss:; worker-src 'self'",
     },
     web_accessible_resources: [
       {
