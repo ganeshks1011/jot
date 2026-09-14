@@ -21,7 +21,7 @@ export function ThemePicker({ value, onChange, size = "sm" }: ThemePickerProps) 
     <div
       role="radiogroup"
       aria-label="Theme"
-      className="inline-flex items-center rounded-full border border-border bg-surface-secondary/60 p-0.5"
+      className="inline-flex items-center rounded-full bg-surface-secondary/60 p-0.5"
     >
       {entries.map(([id, Icon, label]) => (
         <button

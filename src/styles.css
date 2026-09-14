@@ -26,12 +26,14 @@
   font-family: var(--font-jot);
 }
 
-/* Professional chrome: gradient border, neutral page-aware shadow. */
-.jot-card-glow {
+/* Professional chrome: neutral face, gradient border only. Doubled class
+   beats single-class host component rules regardless of order (same
+   pattern as .jot-assistant below). */
+.jot-card-glow.jot-card-glow {
   border: 1px solid transparent;
   background:
     linear-gradient(var(--jot-card-face, #fff), var(--jot-card-face, #fff)) padding-box,
-    linear-gradient(135deg, #7c3aed, #ef4444) border-box;
+    var(--brand-gradient, linear-gradient(135deg, #7c3aed, #ef4444)) border-box;
   box-shadow: var(--jot-shadow, 0 8px 30px rgb(0 0 0 / 0.18));
   animation: none;
 }
