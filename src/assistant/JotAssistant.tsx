@@ -613,7 +613,7 @@ export function JotAssistant({
     <Card
       ref={rootRef}
       style={cardVars}
-      className={`jot-card-glow jot-assistant relative w-full overflow-visible backdrop-blur-xl${paired ? " jot-paired" : ""}${isFullscreen ? " jot-fullscreen-card" : ""}`}
+      className={`jot-card-glow jot-assistant relative w-full overflow-visible${paired ? " jot-paired" : ""}${isFullscreen ? " jot-fullscreen-card" : ""}`}
     >
       <Card.Header className="items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">

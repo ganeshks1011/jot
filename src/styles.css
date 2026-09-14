@@ -11,14 +11,14 @@
 [data-theme="light"] {
   --accent: oklch(0.6204 0.195 253.83);
   --accent-foreground: oklch(0.99 0 0);
-  --jot-card-face: color-mix(in srgb, var(--surface) 80%, transparent);
+  --jot-card-face: var(--surface);
   --brand-gradient: linear-gradient(135deg, #ef4444, #7c3aed);
 }
 
 [data-theme="dark"] {
   --accent: oklch(0.6204 0.195 253.83);
   --accent-foreground: oklch(0.99 0 0);
-  --jot-card-face: color-mix(in srgb, var(--surface) 80%, transparent);
+  --jot-card-face: var(--surface);
   --brand-gradient: linear-gradient(135deg, #f87171, #8b5cf6);
 }
 
