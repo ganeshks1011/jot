@@ -34,6 +34,8 @@ export interface JotAppearance {
   composerFg?: string | null;
   pageDark?: boolean | null;
   fullscreen?: boolean;
+  /** Max height of the result box (CSS length). Unset = 38vh default. */
+  contentMax?: string;
 }
 
 export interface JotSizeReporter {
@@ -56,6 +58,9 @@ interface JotAssistantProps {
   onRewriteStart?: () => void;
   /** Host iframe sizing; absent on the website (no iframe to size). */
   sizeReporter?: JotSizeReporter;
+  /** Show the header settings action. False on the website (the gear is
+   *  extension chrome); the Style screen covers its job there. */
+  showSettingsAction?: boolean;
 }
 
 /** Upgrade action with the upgrade payload captured (avoids re-narrowing). */
@@ -87,6 +92,7 @@ export function JotAssistant({
   editorType,
   onRewriteStart,
   sizeReporter,
+  showSettingsAction = true,
 }: JotAssistantProps) {
   const [inputText, setInputText] = useState("");
   const [inserted, setInserted] = useState(false);
@@ -593,6 +599,7 @@ export function JotAssistant({
   const pageIsDark = appearance?.pageDark ?? overlayDark;
   const cardVars = {
     "--jot-shadow": pageIsDark ? "0 8px 30px rgb(255 255 255 / 0.14)" : "0 8px 30px rgb(0 0 0 / 0.18)",
+    ...(appearance?.contentMax ? { "--jot-content-max": appearance.contentMax } : {}),
     ...(paired
       ? {
           "--jot-cbg": composerBg,
@@ -620,21 +627,23 @@ export function JotAssistant({
               Inserted
             </Chip>
           )}
-          <Tooltip>
-            <Tooltip.Trigger className="inline-flex">
-              <Button
-                isIconOnly
-                size="sm"
-                variant="ghost"
-                className="rounded-lg"
-                aria-label="Open settings"
-                onPress={() => adapter.openSettings()}
-              >
-                <SettingsIcon className="size-4" />
-              </Button>
-            </Tooltip.Trigger>
-            <Tooltip.Content>Settings</Tooltip.Content>
-          </Tooltip>
+          {showSettingsAction && (
+            <Tooltip>
+              <Tooltip.Trigger className="inline-flex">
+                <Button
+                  isIconOnly
+                  size="sm"
+                  variant="ghost"
+                  className="rounded-lg"
+                  aria-label="Open settings"
+                  onPress={() => adapter.openSettings()}
+                >
+                  <SettingsIcon className="size-4" />
+                </Button>
+              </Tooltip.Trigger>
+              <Tooltip.Content>Settings</Tooltip.Content>
+            </Tooltip>
+          )}
           <Tooltip>
             <Tooltip.Trigger className="inline-flex">
               <Button

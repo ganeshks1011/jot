@@ -1,7 +1,11 @@
 import { Skeleton } from "@heroui/react/skeleton";
 import { TextArea } from "@heroui/react/textarea";
+import { useEffect, useLayoutEffect } from "react";
 
 export type ContentStatus = "idle" | "generating" | "output";
+
+// Layout effect on the client (no SSR warning), passive on the server.
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 interface ContentBoxProps {
   output: string;
@@ -21,6 +25,18 @@ interface ContentBoxProps {
  * otherwise. Keeps the jot-content identity everywhere.
  */
 export function ContentBox({ output, status, htmlPreview, sanitize }: ContentBoxProps) {
+  // Grow the plain-text box with its content (textareas never self-size).
+  // The CSS max-height cap still applies; the HTML preview div grows
+  // naturally and needs no measuring. Same lines the extension reporter
+  // uses, now local so every host benefits.
+  useIsomorphicLayoutEffect(() => {
+    const el = document.getElementById("jot-content");
+    if (el instanceof HTMLTextAreaElement) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [output, status]);
+
   if (status === "generating" && !output) {
     return (
       <div className="flex flex-col gap-2 px-1 py-1" role="status" aria-live="polite" aria-busy="true">
