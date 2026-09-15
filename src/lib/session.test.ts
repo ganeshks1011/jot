@@ -114,6 +114,58 @@ describe("signInSession", () => {
   });
 });
 
+describe("signInSession VerifyCustomTokenResponse shape", () => {
+  const jwt = (claims: Record<string, unknown>): string => {
+    const b64 = (obj: Record<string, unknown>) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+    return `${b64({ alg: "RS256" })}.${b64(claims)}.sig`;
+  };
+
+  it("derives the uid from the ID token when localId is absent", async () => {
+    const { signInSession, uidFromIdToken } = await freshSession();
+    const idToken = jwt({ user_id: "uid-jwt", sub: "uid-jwt" });
+    expect(uidFromIdToken(idToken)).toBe("uid-jwt");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url === SIGN_IN_URL
+          ? jsonResponse({
+              kind: "identitytoolkit#VerifyCustomTokenResponse",
+              idToken,
+              refreshToken: "rt-1",
+              expiresIn: "3600",
+              isNewUser: false,
+            })
+          : jsonResponse({ users: [{ localId: "uid-jwt", email: "a@x.test" }] }),
+      ),
+    );
+    const user = await signInSession("custom-1");
+    expect(user).toEqual({ uid: "uid-jwt", email: "a@x.test" });
+  });
+
+  it("throws a diagnosable error when no uid is present", async () => {
+    const { signInSession } = await freshSession();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          kind: "identitytoolkit#VerifyCustomTokenResponse",
+          idToken: "not-a-jwt",
+          refreshToken: "rt-1",
+          expiresIn: "3600",
+        }),
+      ),
+    );
+    await expect(signInSession("custom-1")).rejects.toThrow("no uid in response");
+  });
+
+  it("uidFromIdToken reads sub fallback and rejects garbage", async () => {
+    const { uidFromIdToken } = await freshSession();
+    expect(uidFromIdToken(jwt({ sub: "uid-sub" }))).toBe("uid-sub");
+    expect(uidFromIdToken("garbage")).toBeNull();
+    expect(uidFromIdToken(jwt({}))).toBeNull();
+  });
+});
+
 describe("getSessionIdToken", () => {
   it("throws not-signed-in with no session", async () => {
     const { getSessionIdToken } = await freshSession();

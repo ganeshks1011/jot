@@ -142,6 +142,30 @@ async function lookupEmail(idToken: string): Promise<string | null> {
 }
 
 /**
+ * Uid from an ID token's claims. The signInWithCustomToken response
+ * (`identitytoolkit#VerifyCustomTokenResponse`) carries no `localId` field —
+ * the uid only lives inside the JWT (`user_id`/`sub`), so read it there.
+ * Returns null for malformed tokens. Signature verification is unnecessary:
+ * the token just arrived over TLS from Google, and the backend re-verifies
+ * it on every API call.
+ */
+export function uidFromIdToken(idToken: string): string | null {
+  try {
+    const segment = idToken.split(".")[1];
+    if (!segment) return null;
+    const padded = segment.replace(/-/g, "+").replace(/_/g, "/");
+    const claims = JSON.parse(atob(padded)) as Record<string, unknown>;
+    for (const field of ["user_id", "sub", "localId"]) {
+      const value = claims[field];
+      if (typeof value === "string" && value) return value;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Trade a backend-minted custom token for a durable session. Throws on
  * transport errors and invalid/expired custom tokens.
  */
@@ -157,9 +181,14 @@ export async function signInSession(customToken: string): Promise<SessionUser> {
   const idToken = body?.idToken;
   const refreshToken = body?.refreshToken;
   const expiresIn = body?.expiresIn;
-  const uid = body?.localId;
-  if (!res.ok || typeof idToken !== "string" || typeof refreshToken !== "string" || typeof uid !== "string") {
-    throw new Error(serverMessage(body) ?? `Link failed (${res.status})`);
+  if (!res.ok || typeof idToken !== "string" || typeof refreshToken !== "string") {
+    throw new Error(serverMessage(body) ?? `Link failed (${res.status}): no tokens in response`);
+  }
+  // Prefer an explicit localId, else read the uid out of the ID token.
+  const localId = body?.localId;
+  const uid = typeof localId === "string" && localId ? localId : uidFromIdToken(idToken);
+  if (!uid) {
+    throw new Error(`Link failed (${res.status}): no uid in response`);
   }
   const expiresMs = Number(expiresIn) > 0 ? Number(expiresIn) * 1000 : 3600_000;
   const email = await lookupEmail(idToken);
