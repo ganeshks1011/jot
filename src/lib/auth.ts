@@ -4,15 +4,14 @@
  * Sign-in happens on wurkflo.app/extension/auth in a normal browser tab (the
  * web route mints a single-use code and redirects back to the extension's
  * auth-callback page). The options page trades that code for a Firebase
- * custom token via signInWithCustomToken, producing a durable local session
- * whose ID tokens refresh silently. A lightweight {uid,email} snapshot is
- * mirrored into chrome.storage.local so the overlay can reflect account
- * state without bundling the Firebase SDK.
+ * custom token, which lib/session.ts turns into a durable local session
+ * (Identity Toolkit REST, no SDK) whose ID tokens refresh silently.
+ * A lightweight {uid,email} snapshot is mirrored into chrome.storage.local
+ * so the overlay can reflect account state without touching the session.
  */
-import { signOut as firebaseSignOut, onAuthStateChanged, signInWithCustomToken, type User } from "firebase/auth";
 import { browser } from "wxt/browser";
-import { getFirebaseAuth } from "./firebase";
 import { relayFetch } from "./net";
+import { getSessionIdToken, type SessionUser, signInSession, signOutSession, watchSession } from "./session";
 
 export interface WurkfloUser {
   uid: string;
@@ -31,7 +30,7 @@ export function extensionAuthUrl(extensionId: string): string {
 
 const LINK_EXCHANGE_URL = `${WURKFLO_ORIGIN}/api/auth/link/exchange`;
 
-async function mirrorUser(user: User | null): Promise<void> {
+async function mirrorUser(user: SessionUser | null): Promise<void> {
   if (user) {
     await browser.storage.local.set({
       [WURKFLO_USER_KEY]: { uid: user.uid, email: user.email } satisfies WurkfloUser,
@@ -42,7 +41,7 @@ async function mirrorUser(user: User | null): Promise<void> {
 }
 
 export async function signOutWurkflo(): Promise<void> {
-  await firebaseSignOut(getFirebaseAuth());
+  await signOutSession();
   await mirrorUser(null);
 }
 
@@ -51,8 +50,7 @@ export async function signOutWurkflo(): Promise<void> {
  * refreshes it once on mount). Returns an unsubscribe function.
  */
 export function watchWurkfloAuth(): () => void {
-  const auth = getFirebaseAuth();
-  return onAuthStateChanged(auth, (user) => {
+  return watchSession((user) => {
     void mirrorUser(user);
   });
 }
@@ -60,28 +58,17 @@ export function watchWurkfloAuth(): () => void {
 /**
  * Fresh ID token for API calls; throws when signed out.
  *
- * The persisted Firebase session is owned by the background service worker.
- * Contexts with a local currentUser (options page) use it directly; the
- * overlay iframe's storage is partitioned, so it asks the background for a
- * token instead.
+ * The persisted session lives in chrome.storage.local, shared by the
+ * options page and the background service worker. Contexts read it locally
+ * first; the overlay iframe's storage is partitioned, so it asks the
+ * background for a token instead.
  */
 export async function getWurkfloToken(): Promise<string> {
   let token: string | null = null;
   try {
-    const auth = getFirebaseAuth();
-    // Wait briefly for IndexedDB persistence to restore on cold start.
-    try {
-      await Promise.race([
-        auth.authStateReady(),
-        new Promise<void>((_, reject) => setTimeout(() => reject(new Error("auth-timeout")), 2500)),
-      ]);
-    } catch {
-      // authStateReady timeout is non-fatal; fall through to currentUser check.
-    }
-    const local = auth.currentUser;
-    if (local) token = await local.getIdToken();
+    token = await getSessionIdToken();
   } catch {
-    // Partitioned iframe storage can break local init; fall through to the
+    // Partitioned iframe storage can break local reads; fall through to the
     // background worker below.
   }
   if (token) return token;
@@ -127,7 +114,7 @@ export async function completeWurkfloLink(code: string): Promise<WurkfloUser> {
     throw err;
   }
 
-  const cred = await signInWithCustomToken(getFirebaseAuth(), customToken);
-  await mirrorUser(cred.user);
-  return { uid: cred.user.uid, email: cred.user.email };
+  const session = await signInSession(customToken);
+  await mirrorUser(session);
+  return { uid: session.uid, email: session.email };
 }

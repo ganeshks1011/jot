@@ -22,7 +22,6 @@
     "@wurkflo/shared": "*",
     "@heroui/react": "^3.2.4",
     "@heroui/styles": "^3.2.4",
-    "firebase": "^12.18.0",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

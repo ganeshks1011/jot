@@ -406,7 +406,7 @@ async function streamWurkfloRewrite(
   sourceHtml?: string | null,
   nodes?: LexicalTextNode[] | null,
 ): Promise<string> {
-  // Dynamic import keeps the Firebase SDK out of bundles that never use it.
+  // Dynamic import keeps the session module out of bundles that never use it.
   const [{ getWurkfloToken }, { getWurkfloUser }] = await Promise.all([import("./auth"), import("./storage")]);
   const user = await getWurkfloUser();
   if (!user) {
@@ -414,7 +414,7 @@ async function streamWurkfloRewrite(
   }
 
   // Auth token fetch is part of the retryable scope. Cold SW starts need one
-  // extra attempt after the background's IndexedDB restore.
+  // extra attempt after the background worker wakes.
   const getTokenWithRetry = async (): Promise<string> => {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {

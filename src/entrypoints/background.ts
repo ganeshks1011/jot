@@ -222,28 +222,13 @@ export default defineBackground(() => {
       return handleHttpRelay(message as HttpMessage);
     }
 
-    // Wurkflo token authority: the persisted Firebase session lives here; the
-    // partitioned overlay iframe asks for a fresh ID token per rewrite.
+    // Wurkflo token authority: the persisted session (lib/session.ts,
+    // chrome.storage.local) is readable here; the partitioned overlay
+    // iframe asks for a fresh ID token per rewrite.
     if (type === "jot:wurkflo-token") {
       return (async () => {
-        const { getFirebaseAuth } = await import("@/lib/firebase");
-        const auth = getFirebaseAuth();
-        // On cold SW start IndexedDB restore is async. Wait for it.
-        try {
-          await Promise.race([
-            auth.authStateReady(),
-            new Promise<void>((_, reject) => setTimeout(() => reject(new Error("auth-timeout")), 3000)),
-          ]);
-        } catch {
-          // Timeout is non-fatal; proceed to check currentUser.
-        }
-        // Brief extra window for races where storage hasn't rehydrated.
-        if (!auth.currentUser) {
-          await new Promise<void>((resolve) => setTimeout(resolve, 500));
-        }
-        const user = auth.currentUser;
-        if (!user) throw new Error("not-signed-in");
-        const token = await user.getIdToken();
+        const { getSessionIdToken } = await import("@/lib/session");
+        const token = await getSessionIdToken();
         return { ok: true as const, token };
       })().catch((err: unknown) => ({
         ok: false as const,
