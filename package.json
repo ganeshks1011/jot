@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:page": "node scripts/serve-test.mjs",
     "architecture-check": "tsx scripts/architecture-check.ts",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare || exit 0"
   },
   "dependencies": {
     "@wurkflo/jot-ui": "*",
