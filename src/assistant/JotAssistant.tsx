@@ -541,13 +541,17 @@ export function JotAssistant({
         return out;
       }
       const sections = getSections();
-      // The Update button duplicates Enter-on-content; Tab reaches it right
-      // after the result it applies. Absent unless the replace hint shows.
-      const update = document.querySelector<HTMLElement>("[data-jot-update]");
-      if (update) {
+      // Copy/Update duplicate Shift+Enter/Enter-on-content; Tab reaches
+      // them right after the result they act on, in cluster order. Absent
+      // unless the replace hint shows.
+      const actions = ["[data-jot-copy]", "[data-jot-update]"].flatMap((sel) => {
+        const el = document.querySelector<HTMLElement>(sel);
+        return el ? [el] : [];
+      });
+      if (actions.length > 0) {
         const contentIdx = sections.findIndex((el) => el.id === "jot-content");
-        if (contentIdx >= 0) sections.splice(contentIdx + 1, 0, update);
-        else sections.push(update);
+        if (contentIdx >= 0) sections.splice(contentIdx + 1, 0, ...actions);
+        else sections.push(...actions);
       }
       return [...out, ...sections];
     };
@@ -789,15 +793,14 @@ export function JotAssistant({
                   <span className="flex items-center gap-1.5">
                     Hit <Kbd>⏎</Kbd> to use. Hit <Kbd>⇧</Kbd> + <Kbd>⏎</Kbd> to copy to clipboard.
                   </span>
-                  <Button
-                    size="sm"
-                    variant="tertiary"
-                    className="ml-auto shrink-0"
-                    data-jot-update
-                    onPress={() => void insertText(output)}
-                  >
-                    Update
-                  </Button>
+                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                    <Button size="sm" variant="outline" data-jot-copy onPress={() => void copyOutput()}>
+                      ⇧⏎ Copy
+                    </Button>
+                    <Button size="sm" variant="outline" data-jot-update onPress={() => void insertText(output)}>
+                      ⏎ Update
+                    </Button>
+                  </span>
                 </>
               ) : kind === "tweak" ? (
                 <>
