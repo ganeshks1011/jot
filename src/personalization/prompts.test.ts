@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BASE_PROMPT, buildFeedbackBlock, buildSystemPrompt, buildUserMessage, PLACEHOLDER_GUARD } from "./prompts";
+import {
+  BASE_PROMPT,
+  buildFeedbackBlock,
+  buildPriorOutputBlock,
+  buildSystemPrompt,
+  buildUserMessage,
+  PLACEHOLDER_GUARD,
+} from "./prompts";
 
 describe("buildSystemPrompt", () => {
   it("wraps mode prompt in COMMON_PROMPT via {mode_instruction}", () => {
@@ -39,12 +46,31 @@ describe("buildFeedbackBlock", () => {
   });
 });
 
+describe("buildPriorOutputBlock", () => {
+  it("returns framing plus previous_rewrite block", () => {
+    const result = buildPriorOutputBlock("old text");
+    expect(result).toContain("<previous_rewrite>\nold text\n</previous_rewrite>");
+    expect(result).toContain("previous rewrite is provided below for context");
+  });
+  it("returns empty for blank output", () => {
+    expect(buildPriorOutputBlock("   ")).toBe("");
+    expect(buildPriorOutputBlock()).toBe("");
+    expect(buildPriorOutputBlock(null)).toBe("");
+  });
+});
+
 describe("buildUserMessage", () => {
   it("returns a single user_input block wrapping the input when called with only input", () => {
     const input = "test input";
     const result = buildUserMessage({ input });
 
     expect(result).toBe(`<user_input>\ntest input\n</user_input>`);
+  });
+
+  it("appends the previous rewrite after the input when priorOutput is provided", () => {
+    const result = buildUserMessage({ input: "test input", priorOutput: "old text" });
+
+    expect(result).toBe(`<user_input>\ntest input\n</user_input>\n\n${buildPriorOutputBlock("old text")}`);
   });
 
   it("preserves surrounding whitespace in input (not trimming)", () => {

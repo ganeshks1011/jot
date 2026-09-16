@@ -52,6 +52,23 @@ export function buildFeedbackBlock(feedback?: string): string {
   return `${FEEDBACK_FRAMING}\n\n<feedback>\n${feedback.trim()}\n</feedback>`;
 }
 
+/** Static framing shown once before the previous-rewrite block (byte-stable). */
+const PRIOR_OUTPUT_FRAMING =
+  "The previous rewrite is provided below for context. Apply the feedback " +
+  "to it, guided by the original input; never include this framing text " +
+  "in the rewritten text.";
+
+/**
+ * Previous-rewrite block: the latest output travels alongside the original
+ * input so a tweak is inferred against both. Used by the Jot rewrite API
+ * (backend appends it to the user message) and the direct-provider path
+ * (embedded in the user message). Returns "" when blank.
+ */
+export function buildPriorOutputBlock(priorOutput?: string | null): string {
+  if (!priorOutput?.trim()) return "";
+  return `${PRIOR_OUTPUT_FRAMING}\n\n<previous_rewrite>\n${priorOutput.trim()}\n</previous_rewrite>`;
+}
+
 /**
  * Guard appended when sensitive values were redacted locally. Placeholders
  * must survive the rewrite verbatim so the originals can be restored.
@@ -71,8 +88,9 @@ export function buildSystemPrompt(modePrompt: string, opts?: { preservePlacehold
 }
 
 /**
- * user message: delimited blocks for custom instructions / feedback / input,
- * always in that fixed order. User content never reaches the system prompt.
+ * user message: delimited blocks for custom instructions / feedback /
+ * input, with the previous rewrite trailing when present — always in that
+ * fixed order. User content never reaches the system prompt.
  * When the capture carried formatting, the sanitized HTML fragment travels
  * in <user_input_html> ahead of the plain <user_input> so the model can
  * preserve tags it otherwise could not see.
@@ -82,6 +100,7 @@ export function buildUserMessage(opts: {
   feedback?: string;
   customInstruction?: string;
   inputHtml?: string | null;
+  priorOutput?: string | null;
 }): string {
   const blocks: string[] = [];
   if (opts.customInstruction?.trim()) {
@@ -93,5 +112,7 @@ export function buildUserMessage(opts: {
     blocks.push(`<user_input_html>\n${opts.inputHtml.trim()}\n</user_input_html>`);
   }
   blocks.push(`<user_input>\n${opts.input}\n</user_input>`);
+  const priorBlock = buildPriorOutputBlock(opts.priorOutput);
+  if (priorBlock) blocks.push(priorBlock);
   return blocks.join("\n\n");
 }

@@ -14,6 +14,7 @@ export {
 export {
   BASE_PROMPT,
   buildFeedbackBlock,
+  buildPriorOutputBlock,
   buildSystemPrompt,
   buildUserMessage,
   COMMON_PROMPT,
