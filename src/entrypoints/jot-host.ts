@@ -17,6 +17,7 @@ import {
 import { buildInitKey, shouldSendInit } from "@/lib/initHandshake";
 import { captureLexical, commitLexicalMap, type LexicalCapture } from "@/lib/lexical";
 import {
+  COMPACT_OPEN_HEIGHT,
   IFRAME_MARGIN,
   isDarkBackground,
   isTransparentBackground,
@@ -662,6 +663,11 @@ function createHost(): HostController {
     // first streaming resize can still trip fullscreen later (one-way
     // upgrade, never flips back).
     positionIframe(160, true);
+    // Visible from open: positionIframe sizes anchored frames by width and
+    // placement only, so without this the frame keeps its 0px creation
+    // height until the first content resize (i.e. until output lands).
+    // The overlay's own resize corrects this estimate within milliseconds.
+    frame.style.height = `${COMPACT_OPEN_HEIGHT}px`;
     enableSmoothResize(frame);
 
     // Fast path: send init once the frame has loaded. The overlay also sends

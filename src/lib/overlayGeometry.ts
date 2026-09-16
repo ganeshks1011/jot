@@ -14,6 +14,15 @@ export const FULLSCREEN_CARD_WIDTH = 880;
 export const FULLSCREEN_MARGIN = 16;
 /** Compact pre-content card width: the loader opens small even on wide composers. */
 export const COMPACT_CARD_WIDTH = 480;
+/**
+ * Compact pre-content frame height: card estimate (header + skeleton lines +
+ * tweak input ≈ 160px) plus document margin on both sides. The host sets
+ * this at open so the panel is visible before the first content resize;
+ * that resize corrects it within milliseconds. Without it the frame keeps
+ * its 0px creation height until output lands and the open reads as
+ * "fetch, then show".
+ */
+export const COMPACT_OPEN_HEIGHT = 184;
 /** Floor keeping selection-anchored cards readable (never narrower). */
 export const TEXT_ANCHORED_MIN_WIDTH = 360;
 /** Unanchored float panel shares a fixed detached width. */

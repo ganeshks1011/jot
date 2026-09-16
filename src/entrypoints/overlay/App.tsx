@@ -114,26 +114,29 @@ export default function App() {
   // budget minus measured chrome (header/footer/hints/gaps). The card
   // notifies on every content change; the host decides placement from
   // content that wants to exist, not from the height the cap allows.
+  // Skeleton, prompt, hint, and error states have no #jot-content node, so
+  // the card itself is the fallback measure: without it the host never
+  // learns a height and the panel stays at 0px until output lands.
   const sizeReporter = useMemo<JotSizeReporter>(
     () => ({
       notify: (compact: boolean) => {
         const content = document.getElementById("jot-content");
-        const card = content?.closest(".jot-card-glow");
-        if (!card || !(content instanceof HTMLElement)) return;
-        const cardEl = card as HTMLElement;
+        const card = (content?.closest(".jot-card-glow") ??
+          document.querySelector(".jot-card-glow")) as HTMLElement | null;
+        if (!card) return;
         if (content instanceof HTMLTextAreaElement) {
           content.style.height = "auto";
           content.style.height = `${content.scrollHeight}px`;
         }
         const maxH = maxPanelHeightRef.current;
-        if (maxH == null) {
-          cardEl.style.removeProperty("--jot-content-max");
-          return;
+        if (content instanceof HTMLElement && maxH != null) {
+          const chrome = card.scrollHeight - content.scrollHeight;
+          const cap = Math.max(MIN_CONTENT_HEIGHT, maxH - chrome);
+          card.style.setProperty("--jot-content-max", `${Math.round(cap)}px`);
+        } else {
+          card.style.removeProperty("--jot-content-max");
         }
-        const chrome = cardEl.scrollHeight - content.scrollHeight;
-        const cap = Math.max(MIN_CONTENT_HEIGHT, maxH - chrome);
-        cardEl.style.setProperty("--jot-content-max", `${Math.round(cap)}px`);
-        postResize(compact, content.scrollHeight);
+        postResize(compact, card.scrollHeight);
       },
     }),
     [],
