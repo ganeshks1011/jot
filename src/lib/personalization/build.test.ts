@@ -49,6 +49,17 @@ describe("buildDirectPrompts", () => {
     expect(system).not.toContain("<feedback>");
   });
 
+  it("appends the previous rewrite after the input when tweaking", async () => {
+    const { user } = await buildDirectPrompts({
+      source: "please fix this",
+      followUp: "shorter",
+      priorOutput: "old rewrite",
+    });
+    expect(user).toContain("<user_input>\nplease fix this\n</user_input>");
+    expect(user).toContain("<previous_rewrite>\nold rewrite\n</previous_rewrite>");
+    expect(user.indexOf("<user_input>")).toBeLessThan(user.indexOf("<previous_rewrite>"));
+  });
+
   it("surfaces a saved site override", async () => {
     await savePrompt("email", "Email voice");
     await saveDomains([{ context: "email", pattern: "gmail.com" }]);
@@ -95,6 +106,13 @@ describe("buildApiPrompts", () => {
     expect(payload.systemPrompt).toContain("<feedback>");
     expect(payload.input).not.toContain("<feedback>");
     expect(payload.input).not.toContain("<user_input>");
+  });
+
+  it("passes priorOutput through and omits the key when absent", async () => {
+    const withPrior = await buildApiPrompts({ source: "hi", priorOutput: "  old rewrite  " });
+    expect(withPrior.priorOutput).toBe("old rewrite");
+    const without = await buildApiPrompts({ source: "hi" });
+    expect("priorOutput" in without).toBe(false);
   });
 
   it("never includes legacy alias keys", async () => {

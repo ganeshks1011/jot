@@ -203,6 +203,17 @@ describe("rewriteLexicalNodes", () => {
     expect(second).toEqual(first);
     expect(relayCalls).toHaveLength(1);
   });
+
+  it("forwards priorOutput on keyed tweaks", async () => {
+    pendingFrames = [
+      'data: {"content":"{\\"rewrites\\":{\\"0/0\\":\\"Hi\\","}\n\n',
+      'data: {"content":"\\"1/0/0\\":\\"uno\\"}}"}\n\n',
+      "data: [DONE]\n\n",
+    ];
+    await rewriteLexicalNodes(nodes, { site: "reddit.com", priorOutput: "old rewrite" });
+    expect(relayCalls).toHaveLength(1);
+    expect(relayCalls[0]?.body).toMatchObject({ priorOutput: "old rewrite" });
+  });
 });
 
 describe("rewriteText response cache", () => {
@@ -235,5 +246,33 @@ describe("rewriteText response cache", () => {
     expect(second).toBe("Hello there");
     expect(relayCalls).toHaveLength(1);
     expect(secondChunks).toEqual(["Hello there"]);
+  });
+
+  it("sends priorOutput on tweaks and keys the cache on it", async () => {
+    pendingFrames = ['data: {"content":"out1"}\n\n', "data: [DONE]\n\n"];
+    const first = await rewriteText("hello", "reddit.com", "shorter", undefined, undefined, "old rewrite");
+    expect(first).toBe("out1");
+    expect(relayCalls).toHaveLength(1);
+    expect(relayCalls[0]?.body).toMatchObject({ priorOutput: "old rewrite" });
+
+    // Same tweak against a different prior output refetches.
+    pendingFrames = ['data: {"content":"out2"}\n\n', "data: [DONE]\n\n"];
+    const second = await rewriteText("hello", "reddit.com", "shorter", undefined, undefined, "new rewrite");
+    expect(second).toBe("out2");
+    expect(relayCalls).toHaveLength(2);
+
+    // Exact repeat serves from cache without a third relay.
+    pendingFrames = [];
+    const third = await rewriteText("hello", "reddit.com", "shorter", undefined, undefined, "new rewrite");
+    expect(third).toBe("out2");
+    expect(relayCalls).toHaveLength(2);
+  });
+
+  it("omits priorOutput on first runs", async () => {
+    pendingFrames = ['data: {"content":"out"}\n\n', "data: [DONE]\n\n"];
+    await rewriteText("hello", "reddit.com");
+    expect(relayCalls).toHaveLength(1);
+    const body = relayCalls[0]?.body as Record<string, unknown>;
+    expect("priorOutput" in body).toBe(false);
   });
 });

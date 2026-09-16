@@ -36,14 +36,24 @@ export async function rewriteText(
   followUp?: string,
   handlers?: RewriteHandlers,
   rich?: { html?: string | null },
+  priorOutput?: string | null,
 ): Promise<string> {
   const config = await getBackendConfig();
   // Redact locally before anything leaves the browser; the mapping stays in
   // this closure for the duration of the call and is never persisted.
-  const red = await applyRedaction(source, followUp, rich?.html);
+  const red = await applyRedaction(source, followUp, rich?.html, priorOutput);
 
   if (config.provider === "jot-api") {
-    const out = await streamWurkfloRewrite(red.source, site, red.followUp, handlers, red.redacted, red.html);
+    const out = await streamWurkfloRewrite(
+      red.source,
+      site,
+      red.followUp,
+      handlers,
+      red.redacted,
+      red.html,
+      undefined,
+      red.priorOutput,
+    );
     return restoreRedaction(sanitizeIfHtml(out), red.replacements);
   }
 
@@ -56,6 +66,7 @@ export async function rewriteText(
     site,
     preservePlaceholders: red.redacted,
     sourceHtml: red.html,
+    priorOutput: red.priorOutput,
   });
   const text = await adapter.rewrite(config, apiKey, system, user);
   const normalized = normalizeRewriteOutput(text);
@@ -94,21 +105,30 @@ interface AppliedRedaction {
   source: string;
   followUp?: string;
   html?: string | null;
+  priorOutput?: string;
   replacements: Replacement[];
   redacted: boolean;
 }
 
 /**
  * Single choke point: sensitive values are replaced locally before any
- * prompt construction or network call. Source, tweak, and the HTML fragment
- * share one numbering so placeholders stay unique within the operation.
+ * prompt construction or network call. Source, tweak, prior output, and
+ * the HTML fragment share one numbering so placeholders stay unique
+ * within the operation.
  */
-async function applyRedaction(source: string, followUp?: string, html?: string | null): Promise<AppliedRedaction> {
+async function applyRedaction(
+  source: string,
+  followUp?: string,
+  html?: string | null,
+  priorOutput?: string | null,
+): Promise<AppliedRedaction> {
   const cleanHtml = html?.trim() ? html : null;
+  const cleanPrior = priorOutput?.trim() ? priorOutput : undefined;
   const passthrough: AppliedRedaction = {
     source,
     followUp,
     html: cleanHtml,
+    priorOutput: cleanPrior,
     replacements: [],
     redacted: false,
   };
@@ -116,6 +136,7 @@ async function applyRedaction(source: string, followUp?: string, html?: string |
   const texts: string[] = [source];
   if (followUp?.trim()) texts.push(followUp);
   if (cleanHtml) texts.push(cleanHtml);
+  if (cleanPrior) texts.push(cleanPrior);
   if (texts.length === 1) {
     const r = redact(source);
     if (r.replacements.length === 0) return passthrough;
@@ -127,7 +148,15 @@ async function applyRedaction(source: string, followUp?: string, html?: string |
   const redSource = out[i++] ?? source;
   const redFollowUp = followUp?.trim() ? out[i++] : followUp;
   const redHtml = cleanHtml ? (out[i++] ?? cleanHtml) : null;
-  return { source: redSource, followUp: redFollowUp, html: redHtml, replacements, redacted: true };
+  const redPrior = cleanPrior ? (out[i++] ?? cleanPrior) : undefined;
+  return {
+    source: redSource,
+    followUp: redFollowUp,
+    html: redHtml,
+    priorOutput: redPrior,
+    replacements,
+    redacted: true,
+  };
 }
 
 /** Strip non-allowlist markup from model output containing tags. */
@@ -163,17 +192,22 @@ const MAX_CACHED_PROMPTS = 20;
  * previous extension versions (older backends ignore the absent field,
  * current backends take the plain path). `nodes` carries Lexical index-path
  * entries for the keyed rewrite and implies its own backend rule.
+ * `priorOutput` carries the latest output when tweaking so the tweak is
+ * inferred against both the original input and the previous rewrite;
+ * omitted on first runs so those payloads stay byte-identical too.
  */
 function buildWurkfloPayload(
   systemPrompt: string,
   input: string,
   html?: boolean,
   nodes?: LexicalTextNode[],
+  priorOutput?: string,
 ): Record<string, unknown> {
   const hash = promptHashCache.get(systemPrompt);
   const base = hash ? { systemPromptHash: hash, input } : { systemPrompt, input };
   const withHtml = html ? { ...base, html: true } : base;
-  return nodes && nodes.length > 0 ? { ...withHtml, nodes } : withHtml;
+  const withNodes = nodes && nodes.length > 0 ? { ...withHtml, nodes } : withHtml;
+  return priorOutput ? { ...withNodes, priorOutput } : withNodes;
 }
 
 function rememberPromptHash(systemPrompt: string, hash: string): void {
@@ -405,6 +439,7 @@ async function streamWurkfloRewrite(
   preservePlaceholders?: boolean,
   sourceHtml?: string | null,
   nodes?: LexicalTextNode[] | null,
+  priorOutput?: string | null,
 ): Promise<string> {
   // Dynamic import keeps the session module out of bundles that never use it.
   const [{ getWurkfloToken }, { getWurkfloUser }] = await Promise.all([import("./auth"), import("./storage")]);
@@ -431,16 +466,23 @@ async function streamWurkfloRewrite(
   };
   const token = await getTokenWithRetry();
 
-  const { systemPrompt, input } = await buildApiPrompts({
+  const {
+    systemPrompt,
+    input,
+    priorOutput: promptPrior,
+  } = await buildApiPrompts({
     source,
     followUp,
     site,
     preservePlaceholders,
     sourceHtml,
+    priorOutput,
   });
   // Cross-open response cache: identical text + resolved system prompt
   // reuses the last output without a request (no quota consumed). Keyed
-  // node lists ride in the key so Lexical flows share the mechanism.
+  // node lists ride in the key so Lexical flows share the mechanism, and
+  // the prior output joins it so tweaks against different rewrites never
+  // share a cached result.
   const isHtml = !!sourceHtml?.trim();
   const keyed = nodes && nodes.length > 0 ? nodes : null;
   const responseKey = await buildResponseKey({
@@ -451,6 +493,7 @@ async function streamWurkfloRewrite(
     followUp,
     html: sourceHtml,
     nodes: keyed ? JSON.stringify(keyed.map((n) => [n.id, n.text])) : undefined,
+    priorOutput: promptPrior ?? null,
   });
   const cachedHit = await cachedResponseFor(responseKey);
   if (cachedHit != null) {
@@ -461,8 +504,10 @@ async function streamWurkfloRewrite(
   }
   // Flag HTML inputs so the backend appends its preservation rule; plain
   // inputs omit the field entirely (previous-frontend payload shape).
-  // Keyed node lists ride along for the backend's keyed rewrite rule.
-  let payload = buildWurkfloPayload(systemPrompt, input, isHtml, keyed ?? undefined);
+  // Keyed node lists ride along for the backend's keyed rewrite rule, and
+  // the prior output rides along when tweaking so the tweak is inferred
+  // against both the original input and the previous rewrite.
+  let payload = buildWurkfloPayload(systemPrompt, input, isHtml, keyed ?? undefined, promptPrior);
 
   // The SSE stream is relayed through the background service worker (no host
   // permissions, so extension pages are CORS-bound). Chunks arrive as raw
@@ -569,7 +614,7 @@ async function streamWurkfloRewrite(
       if (e.status === 400 && attempt === 0 && !handlers?.signal?.aborted && isInvalidPromptHashError(e.body)) {
         // Stale cached hash. Drop it and retry once with the full prompt.
         dropPromptHash(systemPrompt);
-        payload = buildWurkfloPayload(systemPrompt, input, isHtml, keyed ?? undefined);
+        payload = buildWurkfloPayload(systemPrompt, input, isHtml, keyed ?? undefined, promptPrior);
         failure = null;
         continue;
       }
@@ -677,6 +722,7 @@ export interface LexicalRewriteOptions {
   source?: string;
   site?: string;
   followUp?: string;
+  priorOutput?: string | null;
   handlers?: RewriteHandlers;
 }
 
@@ -727,10 +773,13 @@ export async function rewriteLexicalNodes(
     throw new ProviderError("network", "Keyed rewrite needs the Wurkflo backend");
   }
   const followUp = opts?.followUp?.trim() ? opts.followUp : undefined;
+  const priorOutput = opts?.priorOutput?.trim() ? opts.priorOutput : undefined;
   const texts = nodes.map((n) => n.text);
   if (followUp) texts.push(followUp);
+  if (priorOutput) texts.push(priorOutput);
   let sentNodes = nodes;
   let sentFollowUp = followUp;
+  let sentPriorOutput = priorOutput;
   let replacements: Replacement[] = [];
   if (await getRedactionEnabled()) {
     const redacted = redactAll(texts);
@@ -738,6 +787,7 @@ export async function rewriteLexicalNodes(
       replacements = redacted.replacements;
       sentNodes = nodes.map((n, i) => ({ id: n.id, text: redacted.texts[i] ?? n.text, block: n.block }));
       if (followUp) sentFollowUp = redacted.texts[nodes.length];
+      if (priorOutput) sentPriorOutput = redacted.texts[nodes.length + (followUp ? 1 : 0)] ?? priorOutput;
     }
   }
   const source = opts?.source?.trim() ? opts.source : nodes.map((n) => n.text).join("\n");
@@ -749,6 +799,7 @@ export async function rewriteLexicalNodes(
     replacements.length > 0,
     undefined,
     sentNodes,
+    sentPriorOutput,
   );
   const map = parseKeyedRewrites(
     raw,

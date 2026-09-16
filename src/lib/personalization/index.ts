@@ -14,6 +14,9 @@ export interface BuildOptions {
   preservePlaceholders?: boolean;
   /** Sanitized HTML fragment when the capture carried formatting. */
   sourceHtml?: string | null;
+  /** Latest output when tweaking, so the tweak is inferred against both
+   *  the original input and the previous rewrite. */
+  priorOutput?: string | null;
 }
 
 async function resolveForSite(site?: string): Promise<string> {
@@ -36,24 +39,33 @@ export async function buildDirectPrompts(opts: BuildOptions): Promise<{ system: 
       input: opts.source,
       feedback: opts.followUp,
       inputHtml: opts.sourceHtml,
+      priorOutput: opts.priorOutput,
     }),
   };
 }
 
 /**
  * Prompts for the Jot rewrite API (systemPrompt + raw input only): the tweak
- * is folded into the system prompt because the backend takes raw input.
- * When the capture carried formatting, the sanitized HTML fragment is the
- * input so the model can preserve tags it otherwise could not see.
+ * is folded into the system prompt because the backend takes raw input,
+ * while the previous rewrite rides as a top-level wire field the backend
+ * appends to the user message. When the capture carried formatting, the
+ * sanitized HTML fragment is the input so the model can preserve tags it
+ * otherwise could not see. The priorOutput key is omitted when absent so
+ * first-run payloads stay byte-identical to previous extension versions.
  */
-export async function buildApiPrompts(opts: BuildOptions): Promise<{ systemPrompt: string; input: string }> {
+export async function buildApiPrompts(opts: BuildOptions): Promise<{
+  systemPrompt: string;
+  input: string;
+  priorOutput?: string;
+}> {
   const instruction = await resolveForSite(opts.site);
   const feedbackBlock = buildFeedbackBlock(opts.followUp);
   const system = buildSystemPrompt(feedbackBlock ? `${instruction}\n\n${feedbackBlock}` : instruction, {
     preservePlaceholders: opts.preservePlaceholders,
   });
   const html = opts.sourceHtml?.trim();
-  return { systemPrompt: system, input: html ? html : opts.source };
+  const prior = opts.priorOutput?.trim() ? opts.priorOutput.trim() : undefined;
+  return { systemPrompt: system, input: html ? html : opts.source, ...(prior ? { priorOutput: prior } : {}) };
 }
 
 /**

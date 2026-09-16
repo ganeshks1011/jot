@@ -29,6 +29,8 @@ export interface ResponseCacheKeyParts {
   html?: string | null;
   /** JSON of keyed [[id, text]] entries for the Lexical flow. */
   nodes?: string | null;
+  /** Latest output when tweaking; tweaks against different rewrites never share. */
+  priorOutput?: string | null;
 }
 
 interface CacheStore {
@@ -73,6 +75,8 @@ export async function buildResponseKey(parts: ResponseCacheKeyParts): Promise<st
     parts.followUp ?? "",
     parts.html ?? "",
     parts.nodes ?? "",
+    // Appended (never inserted): old entries simply miss once and self-heal.
+    parts.priorOutput ?? "",
   ]);
   return sha256Hex(canonical);
 }

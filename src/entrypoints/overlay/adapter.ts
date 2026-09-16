@@ -84,18 +84,20 @@ export function createChromeAdapter({ siteRef, editorRef, verifiedWriteRef }: Ch
           onChunk: handlers.onToken,
         },
         req.html ? { html: req.html } : undefined,
+        req.priorOutput ?? undefined,
       );
       return { output };
     },
 
     async rewriteKeyed(
       nodes: LexicalTextNode[],
-      opts: { source: string; followUp?: string; signal: AbortSignal },
+      opts: { source: string; followUp?: string; priorOutput?: string | null; signal: AbortSignal },
     ): Promise<{ map: Record<string, string>; htmlPreview: string | null }> {
       const map = await rewriteLexicalNodes(nodes, {
         source: opts.source,
         site: siteRef.current,
         followUp: opts.followUp,
+        priorOutput: opts.priorOutput,
         handlers: { signal: opts.signal },
       });
       // Preview HTML is rebuilt by the shared card via sanitizeHtml.
