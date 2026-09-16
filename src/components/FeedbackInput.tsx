@@ -14,7 +14,7 @@ interface FeedbackInputProps {
   placeholder?: string;
 }
 
-/** Compact tweak box: short input plus a labeled Rewrite button. */
+/** Compact tweak box: short input plus a labeled Tweak button. */
 export function FeedbackInput({
   value,
   onChange,
@@ -46,7 +46,7 @@ export function FeedbackInput({
       <Button
         size="sm"
         variant={canSubmit && !pending ? "primary" : "tertiary"}
-        aria-label="Rewrite"
+        aria-label="Tweak"
         className="shrink-0"
         isDisabled={disabled || (!value.trim() && !pending)}
         isPending={pending}
@@ -57,7 +57,7 @@ export function FeedbackInput({
         {({ isPending }) => (
           <>
             {isPending ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />}
-            Rewrite
+            Tweak
           </>
         )}
       </Button>

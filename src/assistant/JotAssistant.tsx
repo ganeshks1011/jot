@@ -540,7 +540,16 @@ export function JotAssistant({
         if (input) out.push(input);
         return out;
       }
-      return [...out, ...getSections()];
+      const sections = getSections();
+      // The Update button duplicates Enter-on-content; Tab reaches it right
+      // after the result it applies. Absent unless the replace hint shows.
+      const update = document.querySelector<HTMLElement>("[data-jot-update]");
+      if (update) {
+        const contentIdx = sections.findIndex((el) => el.id === "jot-content");
+        if (contentIdx >= 0) sections.splice(contentIdx + 1, 0, update);
+        else sections.push(update);
+      }
+      return [...out, ...sections];
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -777,7 +786,18 @@ export function JotAssistant({
                 </>
               ) : kind === "replace" ? (
                 <>
-                  Hit <Kbd>⏎</Kbd> to use. Hit <Kbd>⇧</Kbd> + <Kbd>⏎</Kbd> to copy to clipboard.
+                  <span className="flex items-center gap-1.5">
+                    Hit <Kbd>⏎</Kbd> to use. Hit <Kbd>⇧</Kbd> + <Kbd>⏎</Kbd> to copy to clipboard.
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="tertiary"
+                    className="ml-auto shrink-0"
+                    data-jot-update
+                    onPress={() => void insertText(output)}
+                  >
+                    Update
+                  </Button>
                 </>
               ) : kind === "tweak" ? (
                 <>
