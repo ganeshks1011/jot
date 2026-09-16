@@ -12,7 +12,7 @@ import type { EditorType } from "@/lib/analytics";
 import { MIN_CONTENT_HEIGHT } from "@/lib/overlayGeometry";
 import { canonicalEditorType, createChromeAdapter } from "./adapter";
 import { isEmbedded, onInit, onMetrics, postReady, postResize } from "./lib/bridge";
-import { startReadyRetry } from "./lib/readyRetry";
+import { READY_MAX_RETRIES, READY_RETRY_INTERVAL_MS, startReadyRetry } from "./lib/readyRetry";
 
 const SAMPLE_TEXT = "This is the sample selection used to preview the overlay outside of an extension host.";
 
@@ -23,6 +23,11 @@ export default function App() {
   const [maxPanelHeight, setMaxPanelHeight] = useState<number | null>(null);
   // Dev preview outside a host: render the card without generating.
   const [preview] = useState(() => !isEmbedded());
+  // Host handshake: the card shows a loading glimmer until the first `init`
+  // lands. If the host is broken and `init` never arrives, fall back to the
+  // idle hint after the ready-retry budget is spent.
+  const [initReceived, setInitReceived] = useState(false);
+  const [initTimedOut, setInitTimedOut] = useState(false);
 
   const siteRef = useRef<string | undefined>(undefined);
   const editorRef = useRef<EditorType>("unknown");
@@ -38,10 +43,11 @@ export default function App() {
   // counter forces re-evaluation even for identical text+site (mode
   // hierarchy may have changed); the card queues behind in-flight runs.
   useEffect(() => {
-    let initReceived = false;
     let initCount = 0;
+    let settled = false;
     const unsub = onInit((msg) => {
-      initReceived = true;
+      settled = true;
+      setInitReceived(true);
       const text = msg.text ?? "";
       const site = msg.site ?? undefined;
       const html = msg.html ?? null;
@@ -73,8 +79,17 @@ export default function App() {
     // Cold first-invoke: the host may have posted `init` before this
     // listener attached. Re-post `ready` until the first `init` lands so
     // the host's forced resend reaches us; stops on init or unmount.
-    const stopRetry = startReadyRetry(postReady, () => initReceived);
+    const stopRetry = startReadyRetry(postReady, () => settled);
+    // Broken host: stop shimmering once the retry budget is spent so the
+    // card falls back to the idle hint instead of loading forever.
+    const timeout = setTimeout(
+      () => {
+        if (!settled) setInitTimedOut(true);
+      },
+      READY_RETRY_INTERVAL_MS * (READY_MAX_RETRIES + 1),
+    );
     return () => {
+      clearTimeout(timeout);
       stopRetry();
       unsub();
     };
@@ -135,6 +150,8 @@ export default function App() {
       adapter={adapter}
       appearance={appearance}
       sizeReporter={sizeReporter}
+      awaitingInit={!preview && !initReceived && !initTimedOut}
+      emptyPrompt={initReceived && !source.text.trim()}
     />
   );
 }

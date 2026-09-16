@@ -240,7 +240,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .jot-card-glow,
   .jot-fullscreen-card,
-  #jot-content {
+  #jot-content,
+  .jot-loading,
+  .jot-loading * {
     animation: none;
     transition: none;
   }
