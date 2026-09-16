@@ -177,6 +177,33 @@ try {
   }
 } catch {}
 
+// Overlay boot skeleton: first paint must precede the JS bundle, React,
+// and the host handshake. index.html keeps a zero-JS glimmer (#jot-boot)
+// that App removes on mount; no remote or inline scripts may gate it.
+try {
+  const html = fs.readFileSync("src/entrypoints/overlay/index.html", "utf8");
+  if (!html.includes('id="jot-boot"')) {
+    console.error(`FAIL src/entrypoints/overlay/index.html is missing the #jot-boot first-paint skeleton`);
+    errors++;
+  }
+  // Strip comments: documentation may mention script tags without adding any.
+  const markup = html.replace(/<!--[\s\S]*?-->/g, "");
+  const scripts = markup.match(/<script[\s>]/g) ?? [];
+  if (scripts.length !== 1 || !markup.includes('src="./main.tsx"')) {
+    console.error(`FAIL src/entrypoints/overlay/index.html must contain only the local main.tsx module script`);
+    errors++;
+  }
+  if (/<script[^>]*src\s*=\s*["']https?:/.test(html)) {
+    console.error(`FAIL src/entrypoints/overlay/index.html loads a remote script (MV3 remotely-hosted-code ban)`);
+    errors++;
+  }
+  const appTxt = fs.readFileSync("src/entrypoints/overlay/App.tsx", "utf8");
+  if (!appTxt.includes('getElementById("jot-boot")')) {
+    console.error(`FAIL src/entrypoints/overlay/App.tsx must remove #jot-boot on mount`);
+    errors++;
+  }
+} catch {}
+
 if (errors === 0) {
   if (warns > 0) console.log(`\nArchitecture check passed with ${warns} warn(s) (UI→storage allowed as warn).`);
   else console.log(`\nArchitecture check passed (no errors).`);

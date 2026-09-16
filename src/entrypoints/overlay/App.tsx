@@ -7,7 +7,7 @@
  */
 
 import { type JotAppearance, JotAssistant, type JotSizeReporter, type JotSource } from "@wurkflo/jot-ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { EditorType } from "@/lib/analytics";
 import { MIN_CONTENT_HEIGHT } from "@/lib/overlayGeometry";
 import { canonicalEditorType, createChromeAdapter } from "./adapter";
@@ -38,6 +38,12 @@ export default function App() {
   }, [maxPanelHeight]);
 
   const adapter = useMemo(() => createChromeAdapter({ siteRef, editorRef, verifiedWriteRef }), []);
+
+  // First paint already showed the static boot skeleton (index.html).
+  // Remove it pre-paint so it never overlaps the React card for a frame.
+  useLayoutEffect(() => {
+    document.getElementById("jot-boot")?.remove();
+  }, []);
 
   // Initialize from the content script's captured selection. A per-init
   // counter forces re-evaluation even for identical text+site (mode
