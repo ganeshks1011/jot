@@ -789,19 +789,15 @@ export function JotAssistant({
                   Copy unavailable here. Use <Kbd>⏎</Kbd> to replace
                 </>
               ) : kind === "replace" ? (
-                <>
-                  <span className="flex items-center gap-1.5">
-                    Hit <Kbd>⏎</Kbd> to use. Hit <Kbd>⇧</Kbd> + <Kbd>⏎</Kbd> to copy to clipboard.
-                  </span>
-                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                    <Button size="sm" variant="outline" data-jot-copy onPress={() => void copyOutput()}>
-                      ⇧⏎ Copy
-                    </Button>
-                    <Button size="sm" variant="outline" data-jot-update onPress={() => void insertText(output)}>
-                      ⏎ Update
-                    </Button>
-                  </span>
-                </>
+                <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                  <Button size="sm" variant="outline" data-jot-copy onPress={() => void copyOutput()}>
+                    <Kbd>⇧</Kbd>
+                    <Kbd>⏎</Kbd> Copy
+                  </Button>
+                  <Button size="sm" variant="outline" data-jot-update onPress={() => void insertText(output)}>
+                    <Kbd>⏎</Kbd> Update
+                  </Button>
+                </span>
               ) : kind === "tweak" ? (
                 <>
                   <Kbd>⏎</Kbd> to tweak the output
