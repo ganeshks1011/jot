@@ -14,17 +14,27 @@ export function useJotGeneration(
   const [error, setError] = useState<RewriteErrorShape | null>(null);
 
   const busyRef = useRef(false);
-  const pendingRef = useRef<{ text: string; followUp?: string; html?: string | null } | null>(null);
+  const pendingRef = useRef<{
+    text: string;
+    followUp?: string;
+    html?: string | null;
+    priorOutput?: string | null;
+  } | null>(null);
   const lastKeyRef = useRef("");
   const lastOutputRef = useRef("");
   const abortRef = useRef<AbortController | null>(null);
 
   const runGenerate = useCallback(
-    async (text: string, followUp?: string, html?: string | null): Promise<string | null> => {
+    async (
+      text: string,
+      followUp?: string,
+      html?: string | null,
+      priorOutput?: string | null,
+    ): Promise<string | null> => {
       if (busyRef.current || !text.trim()) return null;
-      // Single-result cache: same source + tweak + site + formatting reuses
-      // the last output instead of refetching.
-      const key = buildCacheKey(text, followUp, siteRef.current, html);
+      // Single-result cache: same source + tweak + site + formatting + prior
+      // output reuses the last output instead of refetching.
+      const key = buildCacheKey(text, followUp, siteRef.current, html, priorOutput);
       if (isCacheHit(key, lastKeyRef.current, lastOutputRef.current)) {
         setOutput(lastOutputRef.current);
         setStatus("output");
@@ -47,7 +57,7 @@ export function useJotGeneration(
       if (refined) adapter.track("refinement_started", { site, editorType });
       try {
         const res = await adapter.rewrite(
-          { text, html, followUp, site, editorType },
+          { text, html, followUp, priorOutput, site, editorType },
           {
             signal: controller.signal,
             onToken: (delta) => {
@@ -77,7 +87,7 @@ export function useJotGeneration(
         const pending = pendingRef.current;
         if (pending) {
           pendingRef.current = null;
-          void runGenerate(pending.text, pending.followUp, pending.html);
+          void runGenerate(pending.text, pending.followUp, pending.html, pending.priorOutput);
         }
       }
       return result || null;

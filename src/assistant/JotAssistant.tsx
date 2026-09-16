@@ -61,6 +61,19 @@ interface JotAssistantProps {
   /** Show the header settings action. False on the website (the gear is
    *  extension chrome); the Style screen covers its job there. */
   showSettingsAction?: boolean;
+  /**
+   * The host handshake hasn't delivered input yet (extension overlay before
+   * `init`). The card shows a loading glimmer and holds auto-generation
+   * until this flips false. Absent/false on hosts that open with input.
+   */
+  awaitingInit?: boolean;
+  /**
+   * The host delivered empty input (nothing captured). The idle box then
+   * invites the user to write. Defaults to the unified rule (empty source
+   * outside the handshake); the extension passes it explicitly so a broken
+   * host falls back to the idle hint instead.
+   */
+  emptyPrompt?: boolean;
 }
 
 /** Upgrade action with the upgrade payload captured (avoids re-narrowing). */
@@ -93,6 +106,8 @@ export function JotAssistant({
   onRewriteStart,
   sizeReporter,
   showSettingsAction = true,
+  awaitingInit = false,
+  emptyPrompt,
 }: JotAssistantProps) {
   const [inputText, setInputText] = useState("");
   const [inserted, setInserted] = useState(false);
@@ -112,6 +127,8 @@ export function JotAssistant({
 
   const sourceRef = useRef(source);
   sourceRef.current = source;
+  // Latest output at submit time (avoids re-creating callbacks per token).
+  const outputRef = useRef("");
   const onRewriteStartRef = useRef(onRewriteStart);
   onRewriteStartRef.current = onRewriteStart;
 
@@ -128,6 +145,10 @@ export function JotAssistant({
     runGenerate,
     clearCache,
   } = useJotGeneration(adapter, siteRef, editorRef);
+
+  // Keep the submit-time snapshot in sync (output state itself would
+  // re-create every callback that reads it).
+  outputRef.current = output;
 
   // Lexical keyed flow: index-path nodes from the host for the structure-
   // preserving rewrite. Refs only: every map arrival also sets output,
@@ -146,11 +167,13 @@ export function JotAssistant({
 
   // Rewrite the captured source, applying the input box text as a tweak
   // instruction on top. Formatting HTML travels alongside the plain source
-  // so the model can preserve tags it otherwise could not see.
+  // so the model can preserve tags it otherwise could not see. The latest
+  // output travels as prior context so a tweak is inferred against both
+  // the original input and the previous rewrite.
   // Lexical keyed flow first when the host supplied nodes: structure is
   // rewritten by id and committed atomically by the host instance.
   const runKeyedGenerate = useCallback(
-    async (nodes: LexicalTextNode[], followUp?: string) => {
+    async (nodes: LexicalTextNode[], followUp?: string, priorOutput?: string | null) => {
       const current = sourceRef.current;
       if (keyedBusyRef.current || nodes.length === 0) return;
       keyedBusyRef.current = true;
@@ -168,6 +191,7 @@ export function JotAssistant({
         const { map, htmlPreview } = await adapter.rewriteKeyed(nodes, {
           source: current.text,
           followUp,
+          priorOutput,
           signal: controller.signal,
         });
         mapRef.current = map;
@@ -207,31 +231,40 @@ export function JotAssistant({
   const generate = useCallback(
     (followUp?: string) => {
       const current = sourceRef.current;
-      if (!current.text.trim()) return;
+      const tweak = followUp?.trim() ? followUp : undefined;
+      // Empty capture + tweak text = compose mode: the tweak itself is the
+      // input (there is no source to refine and no prior output).
+      const hasSource = !!current.text.trim();
+      const text = hasSource ? current.text : tweak;
+      if (!text) return;
+      const prior = hasSource ? outputRef.current || undefined : undefined;
       if (busyRef.current || keyedBusyRef.current) {
-        pendingRef.current = { text: current.text, followUp, html: current.html ?? null };
+        pendingRef.current = { text, followUp: tweak, html: current.html ?? null, priorOutput: prior };
         return;
       }
-      const nodes = nodesRef.current;
+      const nodes = hasSource ? nodesRef.current : null;
       if (nodes && nodes.length > 0 && adapter.rewriteKeyed) {
-        void runKeyedGenerate(nodes, followUp);
+        void runKeyedGenerate(nodes, tweak, prior);
         return;
       }
       mapRef.current = null;
       setKeyedHtml(null);
       onRewriteStartRef.current?.();
-      void runGenerate(current.text, followUp, current.html ?? null);
+      void runGenerate(text, tweak, current.html ?? null, prior);
     },
     [adapter, runGenerate, runKeyedGenerate],
   );
 
   // Auto-generate when the key changes (new init on extension, new open on
-  // web). Queues behind an in-flight run rather than dropping.
+  // web). Queues behind an in-flight run rather than dropping. Held while
+  // the host handshake is still in flight so the card shows the loading
+  // glimmer instead of flashing the idle hint.
   useEffect(() => {
     if (!autoGenerate) {
       setStatus("idle");
       return;
     }
+    if (awaitingInit) return;
     const current = sourceRef.current;
     nodesRef.current = current.nodes && current.nodes.length > 0 ? current.nodes : null;
     mapRef.current = null;
@@ -256,7 +289,7 @@ export function JotAssistant({
       void runGenerate(current.text, undefined, current.html ?? null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoGenerateKey, autoGenerate]);
+  }, [autoGenerateKey, autoGenerate, awaitingInit]);
 
   const close = useCallback(() => {
     // Stop an in-flight stream so it can't write state after dismissal.
@@ -559,9 +592,10 @@ export function JotAssistant({
         event.preventDefault();
         if (output) void insertText(output);
       } else if (el.id === "jot-feedback") {
-        // Refetch with the current tweak instruction (no apply).
+        // Refetch with the current tweak instruction (no apply). An empty
+        // capture composes from the tweak text itself.
         event.preventDefault();
-        if (!sourceRef.current.text.trim()) return;
+        if (!sourceRef.current.text.trim() && !inputText.trim()) return;
         void generate(inputText);
       }
     };
@@ -591,6 +625,10 @@ export function JotAssistant({
   // Unset = theme styling untouched. Paired cards take the composer
   // background as their face so overlay and composer read as one.
   // Detached fullscreen cards always use the theme surface (no composer tint).
+  // Empty-capture prompt: explicit from hosts that track the handshake
+  // (extension), otherwise the unified rule (empty source, handshake done).
+  const showEmptyPrompt = emptyPrompt ?? (!awaitingInit && autoGenerate && !source.text.trim());
+
   const isFullscreen = appearance?.fullscreen === true;
   const composerBg = appearance?.composerBg ?? null;
   const composerFg = appearance?.composerFg ?? null;
@@ -714,7 +752,13 @@ export function JotAssistant({
             </div>
           </div>
         ) : (
-          <ContentBox output={output} status={status} htmlPreview={keyedHtml} sanitize={adapter.sanitizeHtml} />
+          <ContentBox
+            output={output}
+            status={awaitingInit ? "loading" : status}
+            htmlPreview={keyedHtml}
+            sanitize={adapter.sanitizeHtml}
+            emptyPrompt={showEmptyPrompt}
+          />
         )}
         {(() => {
           const kind = selectHelperText({

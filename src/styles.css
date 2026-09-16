@@ -93,7 +93,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .jot-card-glow,
-  #jot-content {
+  #jot-content,
+  .jot-loading,
+  .jot-loading * {
     animation: none;
     transition: none;
   }

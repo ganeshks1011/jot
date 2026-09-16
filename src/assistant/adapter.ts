@@ -69,6 +69,9 @@ export interface RewriteRequest {
   html?: string | null;
   nodes?: LexicalTextNode[] | null;
   followUp?: string;
+  /** Latest output when tweaking, so the tweak is inferred against both
+   *  the original input and the previous rewrite. Absent on first runs. */
+  priorOutput?: string | null;
   /** Instruction for hosts that need one (the website); ignored by hosts
    *  that resolve prompts internally (the extension personalization flow). */
   systemPrompt?: string;
@@ -110,7 +113,7 @@ export interface JotHostAdapter {
   /** Keyed Lexical rewrite. Absent = host can't do keyed; the component falls back to the string flow. */
   rewriteKeyed?(
     nodes: LexicalTextNode[],
-    opts: { source: string; followUp?: string; signal: AbortSignal },
+    opts: { source: string; followUp?: string; priorOutput?: string | null; signal: AbortSignal },
   ): Promise<{ map: Record<string, string>; htmlPreview: string | null }>;
   /** Apply the rewrite at the host target. `map` carries the keyed
    *  Lexical commit for hosts that write through a live editor. */

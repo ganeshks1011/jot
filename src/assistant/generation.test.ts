@@ -16,6 +16,11 @@ describe("buildCacheKey", () => {
     expect(buildCacheKey("a", "x", "s", "<b>a</b>")).toBe("a||x||s||<b>a</b>");
     expect(buildCacheKey("a", "x", "s", null)).toBe("a||x||s");
   });
+  it("appends prior output only when tweaking against one", () => {
+    expect(buildCacheKey("a", "x", "s")).toBe("a||x||s");
+    expect(buildCacheKey("a", "x", "s", null, "old")).toBe("a||x||s||old");
+    expect(buildCacheKey("a", "x", "s", null, "old")).not.toBe(buildCacheKey("a", "x", "s", null, "new"));
+  });
 });
 
 describe("isCacheHit", () => {
