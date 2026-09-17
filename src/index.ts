@@ -48,3 +48,17 @@ export type {
   RestoreResult,
   SensitiveDataType,
 } from "./redaction/types";
+export { groupObservationsByTag, isObservationType, isResearchSourceType, validateObservationText, validateResearchQuestion } from "./research";
+export type {
+  Observation,
+  ObservationType,
+  ResearchFinding,
+  ResearchObjective,
+  ResearchPlan,
+  ResearchQuery,
+  ResearchReport,
+  ResearchSource,
+  ResearchSourceType,
+  ResearchStep,
+  ResearchStepType,
+} from "./research";
