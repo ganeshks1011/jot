@@ -11,6 +11,9 @@ const PLACEHOLDER_PREFIX: Record<SensitiveDataType, string> = {
   secret: "SECRET",
   uuid: "UUID",
   mention: "MENTION",
+  iban: "IBAN",
+  passport: "PASSPORT",
+  name: "NAME",
 };
 
 const PLACEHOLDER_PATTERN = /\[([A-Z]+)_(\d+)\]/g;
@@ -32,6 +35,9 @@ function freshState(): RedactionState {
       secret: 0,
       uuid: 0,
       mention: 0,
+      iban: 0,
+      passport: 0,
+      name: 0,
     },
     seen: new Map(),
   };
@@ -42,7 +48,10 @@ function overlaps(a: DetectedSpan, b: DetectedSpan): boolean {
 }
 
 /** Collect detector spans in priority order, dropping overlaps. */
-function collectSpans(text: string): Array<DetectedSpan & { type: SensitiveDataType }> {
+function collectSpans(
+  text: string,
+  extra: Array<DetectedSpan & { type: SensitiveDataType }> = [],
+): Array<DetectedSpan & { type: SensitiveDataType }> {
   const accepted: Array<DetectedSpan & { type: SensitiveDataType }> = [];
   for (const detector of DETECTORS) {
     for (const s of detector.detect(text)) {
@@ -51,12 +60,23 @@ function collectSpans(text: string): Array<DetectedSpan & { type: SensitiveDataT
       accepted.push({ ...s, type: detector.type });
     }
   }
+  // Low-priority extras (e.g. NLP name spans) lose overlaps to every
+  // pattern detector above.
+  for (const s of extra) {
+    if (s.end <= s.start) continue;
+    if (accepted.some((a) => overlaps(a, s))) continue;
+    accepted.push({ ...s });
+  }
   accepted.sort((a, b) => a.start - b.start);
   return accepted;
 }
 
-function redactWithState(text: string, state: RedactionState): RedactionResult {
-  const spans = collectSpans(text);
+function redactWithState(
+  text: string,
+  state: RedactionState,
+  extra: Array<DetectedSpan & { type: SensitiveDataType }> = [],
+): RedactionResult {
+  const spans = collectSpans(text, extra);
   const replacements: Replacement[] = [];
   let out = "";
   let cursor = 0;
@@ -95,6 +115,10 @@ export function redact(text: string): RedactionResult {
 export function redactAll(texts: string[]): { texts: string[]; replacements: Replacement[] } {
   const state = freshState();
   const results = texts.map((t) => redactWithState(t, state));
+  return mergeResults(results);
+}
+
+function mergeResults(results: RedactionResult[]): { texts: string[]; replacements: Replacement[] } {
   const replacements: Replacement[] = [];
   const seenPlaceholders = new Set<string>();
   for (const r of results) {
@@ -106,6 +130,22 @@ export function redactAll(texts: string[]): { texts: string[]; replacements: Rep
     }
   }
   return { texts: results.map((r) => r.text), replacements };
+}
+
+/**
+ * Like `redactAll`, plus local person-name detection (lazy NLP, loaded on
+ * first use). Name spans rank below every pattern detector. Numbering is
+ * shared with pattern placeholders through the same state.
+ */
+export async function redactAllWithNames(texts: string[]): Promise<{ texts: string[]; replacements: Replacement[] }> {
+  const { detectNameSpans } = await import("./names");
+  const state = freshState();
+  const results: RedactionResult[] = [];
+  for (const text of texts) {
+    const names = (await detectNameSpans(text)).map((s) => ({ ...s, type: "name" as const }));
+    results.push(redactWithState(text, state, names));
+  }
+  return mergeResults(results);
 }
 
 function presentPlaceholders(text: string): Set<string> {

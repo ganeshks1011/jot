@@ -13,7 +13,16 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "compromise": "^14.17.0",
     "typescript": "^6.0.0",
     "vitest": "^4.1.11"
+  },
+  "peerDependencies": {
+    "compromise": "^14.0.0"
+  },
+  "peerDependenciesMeta": {
+    "compromise": {
+      "optional": true
+    }
   }
 }

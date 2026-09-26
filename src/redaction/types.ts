@@ -11,7 +11,19 @@
  * logs, analytics, error reports, or persisted storage.
  */
 
-export type SensitiveDataType = "email" | "phone" | "card" | "ssn" | "url" | "ip" | "secret" | "uuid" | "mention";
+export type SensitiveDataType =
+  | "email"
+  | "phone"
+  | "card"
+  | "ssn"
+  | "url"
+  | "ip"
+  | "secret"
+  | "uuid"
+  | "mention"
+  | "iban"
+  | "passport"
+  | "name";
 
 export interface Replacement {
   placeholder: string;

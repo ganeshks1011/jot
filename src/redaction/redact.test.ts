@@ -217,6 +217,47 @@ describe("mention redaction", () => {
     }
   });
 
+  it("redacts IBANs passing mod-97 and ignores others", () => {
+    const r = redact("iban GB29 NWBK 6016 1331 9268 19 please");
+    expect(r.text).toBe("iban [IBAN_1] please");
+    expect(r.replacements[0]).toMatchObject({ type: "iban", original: "GB29 NWBK 6016 1331 9268 19" });
+    expect(redact("iban GB29 NWBK 6016 1331 9268 20").replacements).toHaveLength(0);
+    expect(redact("ref AB12 total").replacements).toHaveLength(0);
+  });
+
+  it("prefers IBAN over card/phone for overlapping digit runs", () => {
+    const r = redact("pay GB29NWBK60161331926819 now");
+    expect(r.text).toBe("pay [IBAN_1] now");
+    expect(r.replacements).toHaveLength(1);
+  });
+
+  it("redacts provider API keys", () => {
+    expect(redact("key sk-proj-abcdefgh1234").text).toBe("key [SECRET_1]");
+    expect(redact("key sk-live-abcdefgh1234").text).toBe("key [SECRET_1]");
+    expect(redact("key rk-live-abcdefgh1234").text).toBe("key [SECRET_1]");
+    expect(redact("secret whsec_abcdefgh12345678").text).toBe("secret [SECRET_1]");
+    expect(redact("token npm_abcdefghijklmnopqrstuvwx").text).toBe("token [SECRET_1]");
+  });
+
+  it("redacts passport numbers only with a passport keyword nearby", () => {
+    const r = redact("passport no. X1234567 issued");
+    expect(r.text).toBe("passport no. [PASSPORT_1] issued");
+    expect(r.replacements[0]).toMatchObject({ type: "passport", original: "X1234567" });
+    expect(redact("passport 123456789 ok").text).toBe("passport [PASSPORT_1] ok");
+    // Same shapes without the keyword are left alone (order numbers, etc.).
+    expect(redact("order X1234567 shipped").replacements).toHaveLength(0);
+    expect(redact("ticket 123456789 confirmed").replacements).toHaveLength(0);
+  });
+
+  it("restores new placeholder types round-trip", () => {
+    const r = restorePlaceholders("[IBAN_1] and [PASSPORT_1] sent", [
+      { placeholder: "[IBAN_1]", original: "GB29 NWBK 6016 1331 9268 19", type: "iban" },
+      { placeholder: "[PASSPORT_1]", original: "X1234567", type: "passport" },
+    ]);
+    expect(r.text).toBe("GB29 NWBK 6016 1331 9268 19 and X1234567 sent");
+    expect(r.complete).toBe(true);
+  });
+
   it("restores mentions in rewritten output", () => {
     const r = restorePlaceholders("[MENTION_1], could you share a status update?", [
       { placeholder: "[MENTION_1]", original: "@Byte", type: "mention" },
@@ -240,5 +281,63 @@ describe("detectMentionLabels", () => {
   it("returns empty for ordinary text", async () => {
     const { detectMentionLabels } = await import("./detectors");
     expect(detectMentionLabels("no mentions here")).toEqual([]);
+  });
+});
+
+describe("detectNameSpans", () => {
+  it("finds person names with source-verified spans", async () => {
+    const { detectNameSpans } = await import("./names");
+    const text = "Thanks Alice, and Bob Smith for reviews";
+    const spans = await detectNameSpans(text);
+    expect(spans.length).toBeGreaterThan(0);
+    for (const s of spans) {
+      expect(text.slice(s.start, s.end)).toBe(s.value);
+      expect(s.value.length).toBeGreaterThanOrEqual(2);
+    }
+    const values = spans.map((s) => s.value);
+    expect(values).toContain("Bob Smith");
+    // Trailing punctuation trimmed, not part of the value.
+    expect(values).toContain("Alice");
+  });
+
+  it("ignores places, products, and weekdays", async () => {
+    const { detectNameSpans } = await import("./names");
+    const spans = await detectNameSpans("Meeting Monday in New York. My iPhone died. The White House spoke.");
+    expect(spans).toEqual([]);
+  });
+
+  it("returns empty for blank input", async () => {
+    const { detectNameSpans } = await import("./names");
+    expect(await detectNameSpans("")).toEqual([]);
+  });
+});
+
+describe("redactAllWithNames", () => {
+  it("shares numbering between names and pattern placeholders", async () => {
+    const { redactAllWithNames } = await import("./redact");
+    const r = await redactAllWithNames(["ping Sarah Jones", "mail john@acme.com"]);
+    expect(r.texts[0]).toBe("ping [NAME_1]");
+    expect(r.texts[1]).toBe("mail [EMAIL_1]");
+    expect(r.replacements).toEqual([
+      { placeholder: "[NAME_1]", original: "Sarah Jones", type: "name" },
+      { placeholder: "[EMAIL_1]", original: "john@acme.com", type: "email" },
+    ]);
+  });
+
+  it("lets pattern detectors win overlaps against names", async () => {
+    const { redactAllWithNames } = await import("./redact");
+    // A URL containing a name-like path still redacts as one URL.
+    const r = await redactAllWithNames(["see https://example.com/SarahJones/profile"]);
+    expect(r.texts[0]).toBe("see [URL_1]");
+    expect(r.replacements).toHaveLength(1);
+  });
+
+  it("restores names round-trip", async () => {
+    const { redactAllWithNames } = await import("./redact");
+    const { restorePlaceholders } = await import("./redact");
+    const r = await redactAllWithNames(["hi Sarah, meet Bob Smith"]);
+    const restored = restorePlaceholders(`Rewrite: ${r.texts[0]}`, r.replacements);
+    expect(restored.text).toBe("Rewrite: hi Sarah, meet Bob Smith");
+    expect(restored.complete).toBe(true);
   });
 });

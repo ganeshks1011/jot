@@ -39,7 +39,8 @@ export type {
   TeachState,
 } from "./personalization/types";
 export { DETECTOR_TYPES, DETECTORS, detectMentionLabels } from "./redaction/detectors";
-export { redact, redactAll, restorePlaceholders } from "./redaction/redact";
+export { detectNameSpans, ensureNamesLoaded, resetNamesForTests } from "./redaction/names";
+export { redact, redactAll, redactAllWithNames, restorePlaceholders } from "./redaction/redact";
 export type {
   DetectedSpan,
   Detector,

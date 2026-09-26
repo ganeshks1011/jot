@@ -43,6 +43,11 @@ const PHONE_PATTERN = /(?<!\d)(?:\+\d{1,3}[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[
 const SECRET_PREFIX_PATTERN = new RegExp(
   [
     "sk-ant-[A-Za-z0-9-_]{8,}",
+    "sk-proj-[A-Za-z0-9-_]{8,}",
+    "sk-live-[A-Za-z0-9-_]{8,}",
+    "rk-live-[A-Za-z0-9-_]{8,}",
+    "whsec_[A-Za-z0-9-_]{8,}",
+    "npm_[A-Za-z0-9]{24,}",
     "sk-[A-Za-z0-9-_]{8,}",
     "github_pat_[A-Za-z0-9_]{8,}",
     "gh[pousr]_[A-Za-z0-9_]{8,}",
@@ -107,6 +112,64 @@ const uuidDetector: Detector = {
 const ipDetector: Detector = {
   type: "ip",
   detect: (text) => [...collectMatches(IPV4_PATTERN, text), ...collectMatches(IPV6_FULL_PATTERN, text)],
+};
+
+/**
+ * IBANs (ISO 13616): 2-letter country + 2 check digits + up to 30 alphanumerics.
+ * mod-97 filters out lookalikes the way Luhn does for cards; runs before
+ * card/phone so digit runs inside an IBAN are never double-claimed.
+ */
+const IBAN_CANDIDATE_PATTERN = /\b[A-Z]{2}[0-9]{2}(?: ?[A-Z0-9]{4})*(?: ?[A-Z0-9]{1,4})?\b/g;
+
+function ibanValid(normalized: string): boolean {
+  if (normalized.length < 15 || normalized.length > 34) return false;
+  const rearranged = normalized.slice(4) + normalized.slice(0, 4);
+  let remainder = 0;
+  for (const ch of rearranged) {
+    const code = ch >= "0" && ch <= "9" ? ch.charCodeAt(0) - 48 : ch.charCodeAt(0) - 55;
+    if (code < 0 || code > 35) return false;
+    remainder = (remainder * (code > 9 ? 100 : 10) + code) % 97;
+  }
+  return remainder === 1;
+}
+
+const ibanDetector: Detector = {
+  type: "iban",
+  detect: (text) => {
+    const out: DetectedSpan[] = [];
+    for (const m of text.matchAll(IBAN_CANDIDATE_PATTERN)) {
+      if (m.index === undefined || !m[0]) continue;
+      const value = trimTrailing(m[0]);
+      if (!value) continue;
+      if (!ibanValid(value.replace(/ /g, ""))) continue;
+      out.push(span(m.index, value));
+    }
+    return out;
+  },
+};
+
+/**
+ * Passport numbers, keyword-anchored. Bare formats (9 digits, letter +
+ * digits) collide with order/tracking numbers, so a match requires the word
+ * "passport" (either language form) within the preceding 80 chars. Runs
+ * before card/phone for the same double-claim reason as IBAN.
+ */
+const PASSPORT_VALUE_PATTERN = /\b(?:[A-Z]{1,2}[0-9]{7,9}|[0-9]{9})\b/g;
+const PASSPORT_KEYWORD_PATTERN = /passpor[st]/i;
+
+const passportDetector: Detector = {
+  type: "passport",
+  detect: (text) => {
+    const out: DetectedSpan[] = [];
+    for (const m of text.matchAll(PASSPORT_VALUE_PATTERN)) {
+      if (m.index === undefined || !m[0]) continue;
+      const before = text.slice(Math.max(0, m.index - 80), m.index);
+      if (!PASSPORT_KEYWORD_PATTERN.test(before)) continue;
+      const value = trimTrailing(m[0]);
+      if (value) out.push(span(m.index, value));
+    }
+    return out;
+  },
 };
 
 const ssnDetector: Detector = {
@@ -204,13 +267,17 @@ const phoneDetector: Detector = {
 /**
  * Priority order: earlier detectors win overlapping spans, so broad or
  * structural patterns (URL, secrets, UUID, IP) run before narrow numeric
- * ones (SSN, card, phone) that could match inside them.
+ * ones (IBAN, passport, SSN, card, phone) that could match inside them.
+ * IBAN/passport sit ahead of card/phone so their digit runs are never
+ * double-claimed.
  */
 export const DETECTORS: Detector[] = [
   urlDetector,
   secretDetector,
   uuidDetector,
   ipDetector,
+  ibanDetector,
+  passportDetector,
   ssnDetector,
   cardDetector,
   emailDetector,
