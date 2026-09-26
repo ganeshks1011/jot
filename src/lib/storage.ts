@@ -263,6 +263,22 @@ export async function saveRedactionEnabled(v: boolean): Promise<void> {
   await browser.storage.sync.set({ [REDACTION_KEY]: v });
 }
 
+const REDACT_NAMES_KEY = "jot:redactNamesEnabled";
+
+/**
+ * "Also redact person names": local NLP person-name detection layered under
+ * the pattern detectors. Defaults to disabled (new behavior, larger
+ * lazy-loaded parser); stored in chrome.storage.sync (boolean flag only).
+ */
+export async function getRedactNamesEnabled(): Promise<boolean> {
+  const stored = await browser.storage.sync.get(REDACT_NAMES_KEY);
+  return stored[REDACT_NAMES_KEY] === true;
+}
+
+export async function saveRedactNamesEnabled(v: boolean): Promise<void> {
+  await browser.storage.sync.set({ [REDACT_NAMES_KEY]: v });
+}
+
 const ANALYTICS_KEY = "jot:analyticsEnabled";
 const INSTALL_ID_KEY = "jot:installId";
 

@@ -3,7 +3,7 @@
  * Re-exported here so existing extension imports keep working.
  */
 export { DETECTOR_TYPES, DETECTORS } from "@wurkflo/shared";
-export { redact, redactAll, restorePlaceholders } from "@wurkflo/shared";
+export { redact, redactAll, redactAllWithNames, restorePlaceholders } from "@wurkflo/shared";
 export type {
   DetectedSpan,
   Detector,

@@ -32,6 +32,7 @@ import {
   getBackendConfig,
   getCustomProviders,
   getPendingLinkCode,
+  getRedactNamesEnabled,
   getRedactionEnabled,
   getTheme,
   getWurkfloRemaining,
@@ -40,6 +41,7 @@ import {
   saveAnalyticsEnabled,
   saveApiKey,
   saveBackendConfig,
+  saveRedactNamesEnabled,
   saveRedactionEnabled,
   saveTheme,
   upsertCustomProvider,
@@ -130,6 +132,17 @@ export default function App() {
   const handleRedactionChange = useCallback((v: boolean) => {
     setRedactEnabled(v);
     void saveRedactionEnabled(v);
+  }, []);
+
+  const [redactNamesEnabled, setRedactNamesEnabled] = useState(false);
+
+  useEffect(() => {
+    void getRedactNamesEnabled().then(setRedactNamesEnabled);
+  }, []);
+
+  const handleRedactNamesChange = useCallback((v: boolean) => {
+    setRedactNamesEnabled(v);
+    void saveRedactNamesEnabled(v);
   }, []);
 
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
@@ -759,6 +772,24 @@ export default function App() {
                   isSelected={redactEnabled}
                   onChange={handleRedactionChange}
                   aria-label="Protect sensitive information"
+                >
+                  <Switch.Content>
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                  </Switch.Content>
+                </Switch>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border border-border bg-surface-secondary/50 px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium">Also redact person names</p>
+                  <p className="text-[11px] text-muted">Local name detection, loaded on demand. Off by default.</p>
+                </div>
+                <Switch
+                  isSelected={redactNamesEnabled}
+                  onChange={handleRedactNamesChange}
+                  aria-label="Also redact person names"
                 >
                   <Switch.Content>
                     <Switch.Control>

@@ -3,10 +3,16 @@ import { WURKFLO_ORIGIN } from "./config";
 import { relayStream } from "./net";
 import { buildApiPrompts, buildDirectPrompts, buildPreviewPrompts } from "./personalization";
 import { getAdapter, ProviderError } from "./providers";
-import { type Replacement, redact, redactAll, restorePlaceholders } from "./redaction";
+import { type Replacement, redactAll, redactAllWithNames, restorePlaceholders } from "./redaction";
 import { buildResponseKey, cachedResponseFor, storeResponse } from "./responseCache";
 import { sanitizeRichHtml } from "./richText";
-import { getApiKey, getBackendConfig, getRedactionEnabled, setWurkfloRemaining } from "./storage";
+import {
+  getApiKey,
+  getBackendConfig,
+  getRedactionEnabled,
+  getRedactNamesEnabled,
+  setWurkfloRemaining,
+} from "./storage";
 import { isTransientRelayError, isTransientTokenError } from "./transientErrors";
 import type { ProviderId } from "./types";
 
@@ -111,6 +117,18 @@ interface AppliedRedaction {
 }
 
 /**
+ * Pattern redaction, optionally layered with local person-name detection
+ * (lazy-loaded NLP, default off). Single choke point so both rewrite paths
+ * share numbering and restore semantics.
+ */
+async function redactTexts(texts: string[]): Promise<{ texts: string[]; replacements: Replacement[] }> {
+  if (await getRedactNamesEnabled().catch(() => false)) {
+    return redactAllWithNames(texts);
+  }
+  return redactAll(texts);
+}
+
+/**
  * Single choke point: sensitive values are replaced locally before any
  * prompt construction or network call. Source, tweak, prior output, and
  * the HTML fragment share one numbering so placeholders stay unique
@@ -138,11 +156,17 @@ async function applyRedaction(
   if (cleanHtml) texts.push(cleanHtml);
   if (cleanPrior) texts.push(cleanPrior);
   if (texts.length === 1) {
-    const r = redact(source);
-    if (r.replacements.length === 0) return passthrough;
-    return { source: r.text, followUp, html: cleanHtml, replacements: r.replacements, redacted: true };
+    const single = await redactTexts([source]);
+    if (single.replacements.length === 0) return passthrough;
+    return {
+      source: single.texts[0] ?? source,
+      followUp,
+      html: cleanHtml,
+      replacements: single.replacements,
+      redacted: true,
+    };
   }
-  const { texts: out, replacements } = redactAll(texts);
+  const { texts: out, replacements } = await redactTexts(texts);
   if (replacements.length === 0) return passthrough;
   let i = 0;
   const redSource = out[i++] ?? source;
@@ -782,7 +806,7 @@ export async function rewriteLexicalNodes(
   let sentPriorOutput = priorOutput;
   let replacements: Replacement[] = [];
   if (await getRedactionEnabled()) {
-    const redacted = redactAll(texts);
+    const redacted = await redactTexts(texts);
     if (redacted.replacements.length > 0) {
       replacements = redacted.replacements;
       sentNodes = nodes.map((n, i) => ({ id: n.id, text: redacted.texts[i] ?? n.text, block: n.block }));

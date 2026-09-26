@@ -53,7 +53,7 @@ vi.mock("../providers", async (importOriginal) => {
 
 import { rewriteText } from "../api";
 import { saveDomains, savePrompt } from "../personalization";
-import { saveBackendConfig, saveRedactionEnabled } from "../storage";
+import { saveBackendConfig, saveRedactNamesEnabled, saveRedactionEnabled } from "../storage";
 
 beforeEach(async () => {
   captured.length = 0;
@@ -94,6 +94,15 @@ describe("redacted rewrite pipeline", () => {
     expect(captured[0]?.user).toContain("john@acme.com");
     expect(captured[0]?.system).not.toContain("Preserve every placeholder");
     expect(out).toBe("Hi [EMAIL_1], noted.");
+  });
+
+  it("redacts person names when the names setting is enabled", async () => {
+    await saveRedactNamesEnabled(true);
+    const out = await rewriteText("ping Sarah Jones about standup");
+    expect(captured[0]?.user).toContain("[NAME_1]");
+    expect(captured[0]?.user).not.toContain("Sarah Jones");
+    expect(out).toContain("Sarah Jones");
+    await saveRedactNamesEnabled(false);
   });
 
   it("redacts tagged usernames before the LLM and restores after", async () => {
