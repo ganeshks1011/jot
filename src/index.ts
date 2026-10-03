@@ -14,17 +14,17 @@ export {
   type RewriteUpgrade,
   toRewriteError,
 } from "./assistant/adapter";
-export { buildKeyedHtml } from "./assistant/keyedHtml";
-export { copyDomHtml, copyHtml, copyText, type ClipboardLike, type ContentNodeLike } from "./assistant/clipboard";
-export { buildCacheKey, isCacheHit } from "./assistant/generation";
+export { type ClipboardLike, type ContentNodeLike, copyDomHtml, copyHtml, copyText } from "./assistant/clipboard";
 export { describeInsertMetrics, errorMessage } from "./assistant/errorText";
-export { selectHelperText, zoneForTarget, type FocusZone, type HelperKind } from "./assistant/helperText";
+export { buildCacheKey, isCacheHit } from "./assistant/generation";
+export { type FocusZone, type HelperKind, selectHelperText, zoneForTarget } from "./assistant/helperText";
 export {
-  JotAssistant,
   type JotAppearance,
+  JotAssistant,
   type JotSizeReporter,
   type JotSource,
 } from "./assistant/JotAssistant";
+export { buildKeyedHtml } from "./assistant/keyedHtml";
 export { useJotGeneration } from "./assistant/useJotGeneration";
 export { ContentBox, type ContentStatus } from "./components/ContentBox";
 export { FeedbackInput } from "./components/FeedbackInput";
