@@ -122,7 +122,12 @@ describe("keyless loopback (Ollama, LM Studio)", () => {
 
   it("still requires a key off loopback", async () => {
     await expect(
-      provider("openai").rewrite({ provider: "openai", baseUrl: "https://api.openai.com/v1", model: "m" }, "", SYSTEM, USER),
+      provider("openai").rewrite(
+        { provider: "openai", baseUrl: "https://api.openai.com/v1", model: "m" },
+        "",
+        SYSTEM,
+        USER,
+      ),
     ).rejects.toMatchObject({ kind: "no-key" });
     await expect(
       provider("openai").listModels({ provider: "openai", baseUrl: "https://api.openai.com/v1", model: "m" }, ""),

@@ -53,7 +53,7 @@ vi.mock("../providers", async (importOriginal) => {
 
 import { rewriteText } from "../api";
 import { saveDomains, savePrompt } from "../personalization";
-import { saveBackendConfig, saveRedactNamesEnabled, saveRedactionEnabled } from "../storage";
+import { saveBackendConfig, saveRedactionEnabled, saveRedactNamesEnabled } from "../storage";
 
 beforeEach(async () => {
   captured.length = 0;

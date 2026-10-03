@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { isRetiredModel } from "./openai";
 import {
   GEMINI_ADAPTER,
+  GROK_ADAPTER,
   getAdapter,
   getAllAdapters,
   getRecommendedModels,
-  GROK_ADAPTER,
   isLocalProvider,
   OLLAMA_ADAPTER,
   OPENAI_ENDPOINT_PRESETS,

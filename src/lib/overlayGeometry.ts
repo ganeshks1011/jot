@@ -54,13 +54,8 @@ export interface TextSelectionRect {
  * the container and the fullscreen width) and centers on the selection;
  * budgets and the connector follow automatically downstream.
  */
-export function synthesizeAnchor(
-  box: AnchorRect,
-  sel: TextSelectionRect | null,
-  compact: boolean,
-): AnchorRect {
-  const usable =
-    sel && sel.width > 0 && sel.bottom > sel.top ? sel : null;
+export function synthesizeAnchor(box: AnchorRect, sel: TextSelectionRect | null, compact: boolean): AnchorRect {
+  const usable = sel && sel.width > 0 && sel.bottom > sel.top ? sel : null;
   const boxed = Math.min(box.width, FULLSCREEN_CARD_WIDTH);
   const centerX = usable ? usable.left + usable.width / 2 : box.left + box.width / 2;
   let cardW = boxed;

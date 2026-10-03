@@ -150,8 +150,7 @@ export default function Onboarding() {
     if (provider === "jot-api") return !!wurkfloUser;
     if (apiKey.trim()) return true;
     const lowerBase = baseUrl.trim().toLowerCase();
-    if (lowerBase.includes("localhost") || lowerBase.includes("127.0.0.1") || lowerBase.includes("::1"))
-      return true;
+    if (lowerBase.includes("localhost") || lowerBase.includes("127.0.0.1") || lowerBase.includes("::1")) return true;
     return false;
   }, [provider, apiKey, wurkfloUser, baseUrl]);
 
@@ -629,7 +628,9 @@ export default function Onboarding() {
                                 type={showKey ? "text" : "password"}
                                 value={apiKey}
                                 onChange={(e) => setApiKey(e.target.value)}
-                                placeholder={isLocalProvider(provider, baseUrl) ? "Not needed for local models" : "sk-..."}
+                                placeholder={
+                                  isLocalProvider(provider, baseUrl) ? "Not needed for local models" : "sk-..."
+                                }
                                 fullWidth
                                 variant="secondary"
                                 className="pr-11"

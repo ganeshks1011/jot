@@ -1,5 +1,5 @@
-import type { CustomProviderMeta } from "../types";
 import { isLoopbackUrl } from "../net";
+import type { CustomProviderMeta } from "../types";
 import { AnthropicProvider } from "./anthropic";
 import { JotApiProvider, OpenAICompatibleProvider } from "./openai";
 import type { ProviderAdapter } from "./types";

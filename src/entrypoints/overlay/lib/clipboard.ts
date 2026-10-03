@@ -72,12 +72,7 @@ export async function copyHtml(
       // Fall through to plain-only copy below.
     }
   }
-  return copyText(
-    plain,
-    clipboard,
-    doc,
-    execCopy,
-  );
+  return copyText(plain, clipboard, doc, execCopy);
 }
 
 /** Minimal structural surface of a readable content node (DOM + fakes). */

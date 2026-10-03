@@ -19,12 +19,7 @@
  *   instead of pasting into unknown state.
  */
 
-import {
-  type EditableElement,
-  isEditableTarget,
-  liveSlackDeps,
-  type SlackDeps,
-} from "./slack";
+import { type EditableElement, isEditableTarget, liveSlackDeps, type SlackDeps } from "./slack";
 
 /** Framework markers: editor-root selectors. Data only — adding an editor
  *  is adding one line here, never a new branch. Exported so tests pin each
