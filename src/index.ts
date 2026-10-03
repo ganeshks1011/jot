@@ -20,15 +20,14 @@ export {
   COMMON_PROMPT,
   PLACEHOLDER_GUARD,
 } from "./personalization/prompts";
-export { CONTEXT_ORDER } from "./personalization/resolve";
-export { compileSliders, resolveInstruction } from "./personalization/resolve";
+export { CONTEXT_ORDER, compileSliders, resolveInstruction } from "./personalization/resolve";
 export {
-  buildPersonaPrompt,
   type BuiltinSitePersona,
+  buildPersonaPrompt,
   findBuiltinPersona,
 } from "./personalization/sitePersonas";
-export { SLIDER_LEVELS, sliderLevelToDirective, sliderLevelToLabel } from "./personalization/sliders";
 export type { SliderDimension, SliderLevel, SliderLevels } from "./personalization/sliders";
+export { SLIDER_LEVELS, sliderLevelToDirective, sliderLevelToLabel } from "./personalization/sliders";
 export type {
   ContextDomain,
   ContextStyle,
@@ -49,7 +48,6 @@ export type {
   RestoreResult,
   SensitiveDataType,
 } from "./redaction/types";
-export { groupObservationsByTag, isObservationType, isResearchSourceType, validateObservationText, validateResearchQuestion } from "./research";
 export type {
   Observation,
   ObservationType,
@@ -62,4 +60,11 @@ export type {
   ResearchSourceType,
   ResearchStep,
   ResearchStepType,
+} from "./research";
+export {
+  groupObservationsByTag,
+  isObservationType,
+  isResearchSourceType,
+  validateObservationText,
+  validateResearchQuestion,
 } from "./research";

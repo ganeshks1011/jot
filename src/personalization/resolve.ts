@@ -1,9 +1,8 @@
-import { buildPersonaPrompt, findBuiltinPersona } from "./sitePersonas";
-import type { PersonalizationContext } from "./types";
 import { getDefaultInstruction, hasDirective } from "./canonical";
+import { buildPersonaPrompt, findBuiltinPersona } from "./sitePersonas";
 import type { SliderDimension, SliderLevels } from "./sliders";
 import { sliderLevelToDirective } from "./sliders";
-import type { PersonalizationSnapshot, ResolvedStyle } from "./types";
+import type { PersonalizationContext, PersonalizationSnapshot, ResolvedStyle } from "./types";
 
 export const CONTEXT_ORDER: PersonalizationContext[] = ["default", "email", "text", "social", "work"];
 

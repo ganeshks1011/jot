@@ -73,7 +73,13 @@ const MAX_QUESTION_CHARS = 2000;
 const MAX_OBSERVATION_TEXT_CHARS = 5000;
 
 export function isResearchSourceType(value: unknown): value is ResearchSourceType {
-  return value === "reddit" || value === "linkedin" || value === "product_reviews" || value === "community" || value === "competitor";
+  return (
+    value === "reddit" ||
+    value === "linkedin" ||
+    value === "product_reviews" ||
+    value === "community" ||
+    value === "competitor"
+  );
 }
 
 export function isObservationType(value: unknown): value is ObservationType {
