@@ -1,0 +1,116 @@
+@layer theme, base, components, utilities;
+
+/* HeroUI v3 styles for onboarding — mirrors options page */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@heroui/styles/base/base.css" layer(base);
+@import "@heroui/styles/base/scrollbar.css" layer(base);
+@import "@heroui/styles/themes/shared/theme.css" layer(theme);
+@import "@heroui/styles/themes/default/variables.css" layer(theme);
+@import "@heroui/styles/components/button.css" layer(components);
+@import "@heroui/styles/components/card.css" layer(components);
+@import "@heroui/styles/components/chip.css" layer(components);
+@import "@heroui/styles/components/input.css" layer(components);
+@import "@heroui/styles/components/kbd.css" layer(components);
+@import "@heroui/styles/components/select.css" layer(components);
+@import "@heroui/styles/components/list-box.css" layer(components);
+@import "@heroui/styles/components/popover.css" layer(components);
+@import "@heroui/styles/components/slider.css" layer(components);
+@import "@heroui/styles/components/textarea.css" layer(components);
+@import "@heroui/styles/utilities";
+@import "@heroui/styles/variants";
+
+/* Class-based dark mode: dark: utilities follow the .dark class managed
+   by the theme toggle, not the OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Scan the shared jot-ui package for utilities only it references. */
+@source "../../../../../packages/jot-ui/src";
+
+@layer base {
+  :root {
+    --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-jot: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  }
+  :root,
+  [data-theme="light"] {
+    --accent: oklch(0.6204 0.195 253.83);
+    --accent-foreground: oklch(0.99 0 0);
+    --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
+    --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
+    --accent-soft-foreground: oklch(0.42 0.17 262);
+    --accent-soft-hover: color-mix(in oklab, var(--accent) 20%, transparent);
+    --field-border-width: 1px;
+    --radius: 0.5rem;
+  }
+
+  [data-theme="dark"] {
+    --accent: oklch(0.6204 0.195 253.83);
+    --accent-foreground: oklch(0.99 0 0);
+    --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
+    --accent-soft: color-mix(in oklab, var(--accent) 16%, transparent);
+    --accent-soft-foreground: oklch(0.87 0.11 262);
+    --accent-soft-hover: color-mix(in oklab, var(--accent) 22%, transparent);
+    --field-border-width: 1px;
+  }
+
+  html {
+    font-family: var(--font-sans);
+  }
+  .font-jot {
+    font-family: var(--font-jot);
+  }
+}
+
+/* Compact slider for onboarding — smaller, fluid */
+@layer components {
+  [data-slot="slider"] {
+    --slider-track-height: 4px;
+    --slider-thumb-size: 14px;
+    gap: 0.375rem;
+    touch-action: pan-y;
+  }
+  [data-slot="slider-track"] {
+    height: var(--slider-track-height);
+  }
+  [data-slot="slider-thumb"] {
+    width: var(--slider-thumb-size);
+    height: var(--slider-thumb-size);
+  }
+}
+
+/* CSP-safe progress width — no inline style */
+@layer components {
+  [data-progress="0"] .bar {
+    width: 16.666%;
+  }
+  [data-progress="1"] .bar {
+    width: 33.333%;
+  }
+  [data-progress="2"] .bar {
+    width: 50%;
+  }
+  [data-progress="3"] .bar {
+    width: 66.666%;
+  }
+  [data-progress="4"] .bar {
+    width: 83.333%;
+  }
+  [data-progress="5"] .bar {
+    width: 100%;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

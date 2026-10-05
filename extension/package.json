@@ -1,0 +1,41 @@
+{
+  "name": "jot",
+  "description": "Jot is a Chrome extension for replies, comments, posts, announcements, and all the messages you almost didn't send.",
+  "private": true,
+  "version": "0.1.3",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip -b firefox",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:page": "node scripts/serve-test.mjs",
+    "architecture-check": "tsx scripts/architecture-check.ts",
+    "postinstall": "wxt prepare || exit 0"
+  },
+  "dependencies": {
+    "@wurkflo/jot-ui": "*",
+    "@wurkflo/shared": "*",
+    "@heroui/react": "^3.2.4",
+    "@heroui/styles": "^3.2.4",
+    "lucide-react": "^1.33.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwind-variants": "^3.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@wxt-dev/module-react": "^1.2.2",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.20.3",
+    "typescript": "~5.9.3",
+    "vitest": "^2.1.9",
+    "wxt": "^0.21.4"
+  }
+}

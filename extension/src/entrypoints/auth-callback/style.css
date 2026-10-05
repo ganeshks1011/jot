@@ -1,0 +1,56 @@
+@layer theme, base, components, utilities;
+
+/* Minimal HeroUI v3 styles - this page is plain markup (no components). */
+@import "tailwindcss";
+@import "@heroui/styles/base/base.css" layer(base);
+@import "@heroui/styles/base/scrollbar.css" layer(base);
+@import "@heroui/styles/themes/shared/theme.css" layer(theme);
+@import "@heroui/styles/themes/default/variables.css" layer(theme);
+@import "@heroui/styles/utilities";
+
+/* Class-based dark mode: dark: utilities follow the .dark class managed
+   by the theme toggle, not the OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Scan the shared jot-ui package for utilities only it references. */
+@source "../../../../../packages/jot-ui/src";
+
+@layer base {
+  :root {
+    --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-jot: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  }
+  :root,
+  [data-theme="light"] {
+    --accent: oklch(0.6204 0.195 253.83);
+    --accent-foreground: oklch(0.99 0 0);
+    --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
+    --radius: 0.5rem;
+  }
+  [data-theme="dark"] {
+    --accent: oklch(0.6204 0.195 253.83);
+    --accent-foreground: oklch(0.99 0 0);
+    --accent-hover: color-mix(in oklab, var(--accent) 90%, var(--accent-foreground) 10%);
+  }
+  html {
+    font-family: var(--font-sans);
+  }
+  .font-jot {
+    font-family: var(--font-jot);
+  }
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-sans);
+}
