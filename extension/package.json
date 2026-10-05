@@ -18,10 +18,12 @@
     "postinstall": "wxt prepare || exit 0"
   },
   "dependencies": {
-    "@wurkflo/jot-ui": "*",
-    "@wurkflo/shared": "*",
     "@heroui/react": "^3.2.4",
     "@heroui/styles": "^3.2.4",
+    "@react-aria/ssr": "^3.10.1",
+    "@react-aria/utils": "^3.34.1",
+    "@wurkflo/jot-ui": "*",
+    "@wurkflo/shared": "*",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

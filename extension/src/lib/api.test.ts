@@ -51,29 +51,41 @@ vi.mock("./providers", async (importOriginal) => {
   };
 });
 
-import { browser } from "wxt/browser";
 import { listModels, ProviderError, parseKeyedRewrites, rewriteLexicalNodes, rewriteText } from "./api";
-import { clearResponseCache } from "./responseCache";
 import { saveApiKey, saveBackendConfig } from "./storage";
 
 const STORED_URL = "https://stored.example.com/v1";
 
-const relayCalls: Array<{ body: unknown }> = [];
-let pendingFrames: string[] = [];
+interface RelayCall {
+  url: string;
+  method?: string;
+  body?: string;
+}
+
+const relayCalls: RelayCall[] = [];
+let queuedResponses: Array<{ ok: boolean; status: number; text: string }> = [];
+
+function queueCodevuRewrite(rewrite: string) {
+  queuedResponses.push({ ok: true, status: 200, text: JSON.stringify({ ok: true, rewrite }) });
+}
+
+function requestBody(call: RelayCall): Record<string, unknown> {
+  return call.body ? (JSON.parse(call.body) as Record<string, unknown>) : {};
+}
 
 vi.mock("./net", () => ({
-  relayStream: async (req: { body?: string }, handlers: { onChunk: (raw: string) => void }) => {
-    relayCalls.push({ body: req.body ? JSON.parse(req.body) : null });
-    for (const frame of pendingFrames.splice(0)) handlers.onChunk(frame);
+  relayFetch: async (req: RelayCall) => {
+    relayCalls.push(req);
+    const res = queuedResponses.shift();
+    if (!res) throw new Error("no queued relay response");
+    return res;
   },
-}));
-
-vi.mock("./auth", () => ({
-  getWurkfloToken: async () => "test-token",
 }));
 
 beforeEach(async () => {
   captured.length = 0;
+  relayCalls.length = 0;
+  queuedResponses = [];
   await saveBackendConfig({ provider: "openai", baseUrl: STORED_URL, model: "stored-model" });
   await saveApiKey("stored-key", "openai");
 });
@@ -149,10 +161,7 @@ describe("rewriteLexicalNodes", () => {
   ];
 
   beforeEach(async () => {
-    relayCalls.length = 0;
-    pendingFrames = [];
     await saveBackendConfig({ provider: "jot-api", baseUrl: "", model: "" });
-    await browser.storage.local.set({ "jot:wurkfloUser": { uid: "u", email: null } });
   });
 
   it("throws without hitting the network when nodes are empty", async () => {
@@ -167,112 +176,71 @@ describe("rewriteLexicalNodes", () => {
     expect(relayCalls).toHaveLength(0);
   });
 
-  it("sends nodes and returns the parsed map without streaming chunks", async () => {
-    pendingFrames = [
-      'data: {"content":"{\\"rewrites\\":{\\"0/0\\":\\"Hi\\","}\n\n',
-      'data: {"content":"\\"1/0/0\\":\\"uno\\"}}"}\n\n',
-      "data: [DONE]\n\n",
-    ];
+  it("rewrites each node through the codevu backend and returns the id map", async () => {
+    queueCodevuRewrite("Hi");
+    queueCodevuRewrite("uno");
     const onChunk = vi.fn();
-    const map = await rewriteLexicalNodes(nodes, { site: "reddit.com", handlers: { onChunk } });
+    const map = await rewriteLexicalNodes(nodes, { handlers: { onChunk } });
     expect(map).toEqual({ "0/0": "Hi", "1/0/0": "uno" });
-    expect(onChunk).not.toHaveBeenCalled();
-    expect(relayCalls).toHaveLength(1);
-    expect(relayCalls[0]?.body).toMatchObject({ nodes });
-    const body = relayCalls[0]?.body as Record<string, unknown>;
-    expect(typeof body.systemPrompt).toBe("string");
+    expect(onChunk).toHaveBeenCalledTimes(2);
+    expect(relayCalls).toHaveLength(2);
+    const first = requestBody(relayCalls[0]!);
+    expect(first.text).toBe("Hello world");
+    expect(typeof first.installId).toBe("string");
+    expect(relayCalls[0]!.url).toContain("/api/jot/v1/rewrite");
+    expect(requestBody(relayCalls[1]!).text).toBe("one");
   });
 
-  it("throws empty when the model response has no usable map", async () => {
-    pendingFrames = ['data: {"content":"hello plain text"}\n\n', "data: [DONE]\n\n"];
-    await expect(rewriteLexicalNodes(nodes)).rejects.toMatchObject({ kind: "empty" });
+  it("folds a follow-up refinement into each node request", async () => {
+    queueCodevuRewrite("Hi");
+    queueCodevuRewrite("uno");
+    await rewriteLexicalNodes(nodes, { followUp: "shorter" });
+    expect(relayCalls).toHaveLength(2);
+    expect(String(requestBody(relayCalls[0]!).text)).toContain("Refinement request: shorter");
   });
 
-  it("serves identical keyed requests from cache without a second relay", async () => {
-    await clearResponseCache();
-    pendingFrames = [
-      'data: {"content":"{\\"rewrites\\":{\\"0/0\\":\\"Hi\\","}\n\n',
-      'data: {"content":"\\"1/0/0\\":\\"uno\\"}}"}\n\n',
-      "data: [DONE]\n\n",
-    ];
-    const first = await rewriteLexicalNodes(nodes, { site: "reddit.com" });
-    expect(first).toEqual({ "0/0": "Hi", "1/0/0": "uno" });
-    expect(relayCalls).toHaveLength(1);
-    pendingFrames = [];
-    const second = await rewriteLexicalNodes(nodes, { site: "reddit.com" });
-    expect(second).toEqual(first);
-    expect(relayCalls).toHaveLength(1);
-  });
-
-  it("forwards priorOutput on keyed tweaks", async () => {
-    pendingFrames = [
-      'data: {"content":"{\\"rewrites\\":{\\"0/0\\":\\"Hi\\","}\n\n',
-      'data: {"content":"\\"1/0/0\\":\\"uno\\"}}"}\n\n',
-      "data: [DONE]\n\n",
-    ];
-    await rewriteLexicalNodes(nodes, { site: "reddit.com", priorOutput: "old rewrite" });
-    expect(relayCalls).toHaveLength(1);
-    expect(relayCalls[0]?.body).toMatchObject({ priorOutput: "old rewrite" });
+  it("surfaces quota errors as quota provider errors", async () => {
+    queuedResponses.push({ ok: false, status: 429, text: JSON.stringify({ error: "quota_exceeded" }) });
+    await expect(rewriteLexicalNodes(nodes)).rejects.toMatchObject({ kind: "quota" });
   });
 });
 
-describe("rewriteText response cache", () => {
+describe("rewriteText through the codevu backend", () => {
   beforeEach(async () => {
-    relayCalls.length = 0;
-    pendingFrames = [];
-    await clearResponseCache();
     await saveBackendConfig({ provider: "jot-api", baseUrl: "", model: "" });
-    await browser.storage.local.set({ "jot:wurkfloUser": { uid: "u", email: null } });
   });
 
-  it("streams once, then serves the same rewrite from cache", async () => {
-    pendingFrames = ['data: {"content":"Hello "}\n\n', 'data: {"content":"there"}\n\n', "data: [DONE]\n\n"];
-    const firstChunks: string[] = [];
-    const first = await rewriteText("hello there", "reddit.com", undefined, {
+  it("posts installId and text and returns the rewrite", async () => {
+    queueCodevuRewrite("Hello there");
+    const chunks: string[] = [];
+    const out = await rewriteText("hello there", "reddit.com", undefined, {
       onChunk: (delta) => {
-        firstChunks.push(delta);
+        chunks.push(delta);
       },
     });
-    expect(first).toBe("Hello there");
+    expect(out).toBe("Hello there");
+    expect(chunks).toEqual(["Hello there"]);
     expect(relayCalls).toHaveLength(1);
-    expect(firstChunks.join("")).toBe("Hello there");
-    pendingFrames = [];
-    const secondChunks: string[] = [];
-    const second = await rewriteText("hello there", "reddit.com", undefined, {
-      onChunk: (delta) => {
-        secondChunks.push(delta);
-      },
-    });
-    expect(second).toBe("Hello there");
-    expect(relayCalls).toHaveLength(1);
-    expect(secondChunks).toEqual(["Hello there"]);
+    expect(relayCalls[0]!.url).toContain("/api/jot/v1/rewrite");
+    const body = requestBody(relayCalls[0]!);
+    expect(body.text).toBe("hello there");
+    expect(typeof body.installId).toBe("string");
   });
 
-  it("sends priorOutput on tweaks and keys the cache on it", async () => {
-    pendingFrames = ['data: {"content":"out1"}\n\n', "data: [DONE]\n\n"];
-    const first = await rewriteText("hello", "reddit.com", "shorter", undefined, undefined, "old rewrite");
-    expect(first).toBe("out1");
-    expect(relayCalls).toHaveLength(1);
-    expect(relayCalls[0]?.body).toMatchObject({ priorOutput: "old rewrite" });
-
-    // Same tweak against a different prior output refetches.
-    pendingFrames = ['data: {"content":"out2"}\n\n', "data: [DONE]\n\n"];
-    const second = await rewriteText("hello", "reddit.com", "shorter", undefined, undefined, "new rewrite");
-    expect(second).toBe("out2");
-    expect(relayCalls).toHaveLength(2);
-
-    // Exact repeat serves from cache without a third relay.
-    pendingFrames = [];
-    const third = await rewriteText("hello", "reddit.com", "shorter", undefined, undefined, "new rewrite");
-    expect(third).toBe("out2");
-    expect(relayCalls).toHaveLength(2);
+  it("folds a follow-up refinement into the request text", async () => {
+    queueCodevuRewrite("Hi");
+    await rewriteText("hello", "reddit.com", "shorter");
+    const body = requestBody(relayCalls[0]!);
+    expect(String(body.text)).toContain("Refinement request: shorter");
   });
 
-  it("omits priorOutput on first runs", async () => {
-    pendingFrames = ['data: {"content":"out"}\n\n', "data: [DONE]\n\n"];
-    await rewriteText("hello", "reddit.com");
-    expect(relayCalls).toHaveLength(1);
-    const body = relayCalls[0]?.body as Record<string, unknown>;
-    expect("priorOutput" in body).toBe(false);
+  it("surfaces quota errors as quota provider errors", async () => {
+    queuedResponses.push({ ok: false, status: 429, text: JSON.stringify({ error: "quota_exceeded" }) });
+    await expect(rewriteText("hello", "reddit.com")).rejects.toMatchObject({ kind: "quota" });
+  });
+
+  it("surfaces backend failures as network provider errors", async () => {
+    queuedResponses.push({ ok: false, status: 500, text: JSON.stringify({ error: "rewrite_failed" }) });
+    await expect(rewriteText("hello", "reddit.com")).rejects.toMatchObject({ kind: "network" });
   });
 });

@@ -1,5 +1,5 @@
 import { type LexicalTextNode, normalizeRewriteOutput } from "@wurkflo/shared";
-import { buildDirectPrompts } from "./personalization";
+import { buildDirectPrompts, buildPreviewPrompts } from "./personalization";
 import { getAdapter, ProviderError } from "./providers";
 import { type Replacement, redactAll, redactAllWithNames, restorePlaceholders } from "./redaction";
 import { sanitizeRichHtml } from "./richText";
@@ -91,6 +91,7 @@ export async function rewriteWithInstruction(
 ): Promise<string> {
   const config = await getBackendConfig();
   const red = await applyRedaction(source);
+  const { system, user } = await buildPreviewPrompts(instruction, red.source, red.redacted);
   if (config.provider === "jot-api") {
     // The codevu backend takes one style string; fold the full
     // instruction in as an explicit style request on the text.
