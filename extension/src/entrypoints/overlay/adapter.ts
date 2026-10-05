@@ -23,7 +23,7 @@ import { browser } from "wxt/browser";
 import type { AnalyticsErrorType, AnalyticsEventName, AnalyticsParams, EditorType } from "@/lib/analytics";
 import { editorTypeFor, resolveProviderMeta, siteLabelFor, track } from "@/lib/analytics";
 import { rewriteLexicalNodes, rewriteText } from "@/lib/api";
-import { WURKFLO_ORIGIN } from "@/lib/config";
+import { CODEVU_ORIGIN } from "@/lib/config";
 import { htmlToPlainText, sanitizeRichHtml } from "@/lib/richText";
 import { onInsertFailed, onInsertResult, postToParent } from "./lib/bridge";
 
@@ -153,7 +153,7 @@ export function createChromeAdapter({ siteRef, editorRef, verifiedWriteRef }: Ch
       const uri = info.redirectUri?.trim();
       // Validate relative redirectUri. Never trust arbitrary URLs.
       const safeUri = uri?.startsWith("/") ? uri : "/jot/upgrade";
-      void browser.tabs.create({ url: `${WURKFLO_ORIGIN.replace(/\/+$/, "")}${safeUri}` });
+      void browser.tabs.create({ url: `${CODEVU_ORIGIN.replace(/\/+$/, "")}${safeUri}` });
     },
 
     close(): void {

@@ -11,8 +11,6 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  LogIn,
-  LogOut,
   Monitor,
   Moon,
   RefreshCw,
@@ -21,10 +19,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import TeachJotSection, { type TeachJotSectionHandle } from "@/components/TeachJotSection";
-import { useWurkfloLink } from "@/hooks/useWurkfloLink";
 import { type OnboardingStepName, track } from "@/lib/analytics";
 import { listModels } from "@/lib/api";
-import { watchWurkfloAuth } from "@/lib/auth";
 import { headersToText, validateCustomProvider } from "@/lib/customProvider";
 import {
   getAdapter,
@@ -38,32 +34,25 @@ import {
 import { isRetiredModel } from "@/lib/providers/openai";
 import { validateApiKey } from "@/lib/providerValidation";
 import {
-  clearPendingLinkCode,
   DEFAULT_BACKEND,
   getApiKey,
   getBackendConfig,
   getCustomProviders,
-  getPendingLinkCode,
   getTheme,
-  getWurkfloRemaining,
-  getWurkfloUser,
   removeCustomProvider,
   saveApiKey,
   saveBackendConfig,
   saveTheme,
   setOnboarded,
   upsertCustomProvider,
-  type WurkfloUserSnapshot,
-  watchPendingLinkCode,
   watchTheme,
-  watchWurkfloUser,
 } from "@/lib/storage";
 
 const STEP_NAMES: OnboardingStepName[] = ["welcome", "provider", "personalization", "done"];
 
 import type { CustomProviderMeta, ProviderId, ThemeId } from "@/lib/types";
 
-const PLAYGROUND_URL = "https://wurkflo.app/jot/playground";
+const PLAYGROUND_URL = "https://codevu.com/jot";
 
 export default function Onboarding() {
   // Extension page view (onboarding). Fires once on mount.
@@ -136,46 +125,44 @@ export default function Onboarding() {
     void saveTheme(v);
   }, []);
 
-  // Wurkflo
-  const [wurkfloUser, setWurkfloUser] = useState<WurkfloUserSnapshot | null>(null);
-  const [wurkfloRemaining, setWurkfloRemainingState] = useState<number | null>(null);
-  const {
-    linking,
-    linkError,
-    handleConnect: handleWurkfloConnect,
-    handleSignOut: handleWurkfloSignOut,
-  } = useWurkfloLink();
+  // Built-in Jot backend (codevu.com): anonymous install id, no sign-in.
+  const [codevuQuota, setCodevuQuota] = useState<{ used: number; limit: number } | null>(null);
+  const [codevuQuotaLoading, setCodevuQuotaLoading] = useState(false);
+
+  const refreshCodevuQuota = useCallback(async () => {
+    setCodevuQuotaLoading(true);
+    try {
+      const { getCodevuQuota } = await import("@/lib/codevu");
+      const quota = await getCodevuQuota();
+      setCodevuQuota(quota ? { used: quota.used, limit: quota.limit } : null);
+    } finally {
+      setCodevuQuotaLoading(false);
+    }
+  }, []);
 
   const isProviderReady = useMemo(() => {
-    if (provider === "jot-api") return !!wurkfloUser;
+    if (provider === "jot-api") return true;
     if (apiKey.trim()) return true;
     const lowerBase = baseUrl.trim().toLowerCase();
     if (lowerBase.includes("localhost") || lowerBase.includes("127.0.0.1") || lowerBase.includes("::1")) return true;
     return false;
-  }, [provider, apiKey, wurkfloUser, baseUrl]);
+  }, [provider, apiKey, baseUrl]);
 
   // Load existing config
   useEffect(() => {
     void (async () => {
       const cfg = await getBackendConfig();
-      const [key, wUser, wRem] = await Promise.all([getApiKey(cfg.provider), getWurkfloUser(), getWurkfloRemaining()]);
+      const key = await getApiKey(cfg.provider);
       setProvider(cfg.provider);
       setBaseUrl(cfg.baseUrl);
       setModel(cfg.model);
       setApiKey(key);
-      setWurkfloUser(wUser);
-      setWurkfloRemainingState(wRem);
       const metas = await getCustomProviders();
       setCustomMetas(metas);
       setProviderOptions(getAllAdapters());
+      if (cfg.provider === "jot-api") void refreshCodevuQuota();
     })();
-    const unsubW = watchWurkfloUser(setWurkfloUser);
-    const unsubAuth = watchWurkfloAuth();
-    return () => {
-      unsubW();
-      unsubAuth();
-    };
-  }, []);
+  }, [refreshCodevuQuota]);
 
   const selectProvider = useCallback((id: ProviderId) => {
     const adapter = getAdapter(id);
@@ -306,7 +293,7 @@ export default function Onboarding() {
 
   const saveProvider = useCallback(async () => {
     if (!isProviderReady) {
-      setHint(provider === "jot-api" ? "Connect to Wurkflo to continue." : "Enter your API key to continue.");
+      setHint("Enter your API key to continue.");
       return false;
     }
     if (isRetiredModel(model)) {
@@ -341,7 +328,7 @@ export default function Onboarding() {
 
   const finishOnboarding = useCallback(async () => {
     if (!isProviderReady) {
-      setHint("Connect a provider to continue. Choose Wurkflo or enter an API key.");
+      setHint("Connect a provider to continue.");
       setStep(1);
       return;
     }
@@ -436,7 +423,7 @@ export default function Onboarding() {
             <div className="flex flex-col gap-4">
               <div>
                 <h2 className="font-jot text-base font-semibold">Choose your AI provider</h2>
-                <p className="mt-1 text-xs text-muted">Wurkflo gives 100 free rewrites/mo. Or bring your own key.</p>
+                <p className="mt-1 text-xs text-muted">Jot gives 100 free rewrites/mo. Or bring your own key.</p>
               </div>
 
               <div role="radiogroup" aria-label="AI provider" className="flex flex-col gap-2">
@@ -491,39 +478,27 @@ export default function Onboarding() {
                       )}
                       {selected && a.id === "jot-api" && (
                         <div className="rounded-xl border border-border bg-surface-secondary/50 p-4">
-                          {wurkfloUser ? (
-                            <div className="flex items-center justify-between gap-2">
-                              <div>
-                                <p className="truncate text-sm font-medium">{wurkfloUser.email}</p>
-                                <p className="text-xs text-muted">
-                                  {wurkfloRemaining === null
-                                    ? "Signed in via Wurkflo"
-                                    : `${wurkfloRemaining} of 100 free requests left`}
-                                </p>
-                              </div>
-                              <Button size="sm" variant="secondary" onPress={() => void handleWurkfloSignOut()}>
-                                <LogOut className="size-3.5" />
-                                Sign out
-                              </Button>
-                            </div>
-                          ) : (
-                            <>
-                              <p className="text-sm font-medium">Connect Jot Rewrite API from Wurkflo</p>
-                              <p className="mt-1 text-xs text-muted">
-                                No API key needed. Opens wurkflo.app to approve.
-                              </p>
-                              <Button size="sm" variant="primary" onPress={handleWurkfloConnect} className="mt-3">
-                                <LogIn className="size-3.5" />
-                                Connect Jot Rewrite API from Wurkflo
-                              </Button>
-                              {linking && (
-                                <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted">
-                                  <Loader2 className="size-3 animate-spin" /> Finishing…
-                                </p>
-                              )}
-                              {linkError && <p className="mt-2 text-xs text-danger">{linkError}</p>}
-                            </>
-                          )}
+                          <p className="text-sm font-medium">Jot rewrite API</p>
+                          <p className="mt-1 text-xs text-muted">
+                            Built in. No sign-in, no API key. Text is rewritten through codevu.com with
+                            privacy redaction applied first.
+                          </p>
+                          <p className="mt-2 text-xs text-muted">
+                            {codevuQuotaLoading
+                              ? "Checking quota…"
+                              : codevuQuota
+                                ? `${codevuQuota.limit - codevuQuota.used} of ${codevuQuota.limit} free requests left this month`
+                                : "Quota will show after your first rewrite."}
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="tertiary"
+                            onPress={() => void refreshCodevuQuota()}
+                            className="mt-2"
+                            isDisabled={codevuQuotaLoading}
+                          >
+                            <RefreshCw className="size-3.5" /> Refresh quota
+                          </Button>
                         </div>
                       )}
                       {selected && a.id !== "jot-api" && (
@@ -751,7 +726,7 @@ export default function Onboarding() {
                 <h2 className="font-jot text-base font-semibold">You’re all set</h2>
                 <p className="mt-1 text-xs leading-relaxed text-muted">
                   Jot is ready. Your provider and prompts are saved. Select any text or focus an editable field, then
-                  press the shortcut. Or practice end-to-end on the Wurkflo playground.
+                  press the shortcut. Or practice end-to-end on the Jot page.
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface-secondary/60 p-4">

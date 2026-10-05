@@ -263,22 +263,22 @@ export function createOpenAIProvider(opts: {
 }
 
 /**
- * Jot rewrite API (Wurkflo backend). Non-OpenAI, streaming SSE path lives
- * in api.ts. Exists for settings metadata only.
+ * Jot rewrite API (codevu backend). Non-OpenAI, plain-JSON path lives in
+ * codevu.ts. Exists for settings metadata only.
  */
 export class JotApiProvider implements ProviderAdapter {
   readonly id = "jot-api";
   readonly label = "Jot rewrite API";
-  readonly defaultBaseUrl = "https://wurkflo.app";
-  readonly defaultModel = "deepseek-chat";
+  readonly defaultBaseUrl = "https://codevu.com";
+  readonly defaultModel = "jot-builtin";
   readonly tiersEnforcedServerSide = true;
-  readonly apiKeyUrl = "https://wurkflo.app";
+  readonly apiKeyUrl = "https://codevu.com/jot";
 
   async rewrite(): Promise<string> {
-    throw new ProviderError("network", "Jot rewrite API requests are routed through its streaming API");
+    throw new ProviderError("network", "Jot rewrite API requests are routed through codevu.com");
   }
 
   async listModels(): Promise<string[]> {
-    return ["deepseek-chat"];
+    return ["jot-builtin"];
   }
 }

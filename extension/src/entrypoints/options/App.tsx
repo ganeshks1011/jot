@@ -4,14 +4,12 @@ import { Switch } from "@heroui/react/switch";
 import { Tabs } from "@heroui/react/tabs";
 import { TextArea } from "@heroui/react/textarea";
 import { ThemePicker } from "@wurkflo/jot-ui";
-import { Check, ExternalLink, Eye, EyeOff, Loader2, LogIn, LogOut, Plus, RefreshCw } from "lucide-react";
+import { Check, ExternalLink, Eye, EyeOff, Loader2, Plus, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import TeachJotSection from "@/components/TeachJotSection";
-import { useWurkfloLink } from "@/hooks/useWurkfloLink";
 import { track } from "@/lib/analytics";
 import { listModels } from "@/lib/api";
-import { completeWurkfloLink, extensionAuthUrl, signOutWurkflo, watchWurkfloAuth } from "@/lib/auth";
 import { headersToText, validateCustomProvider } from "@/lib/customProvider";
 import {
   getAdapter,
@@ -25,18 +23,14 @@ import {
 import { isRetiredModel } from "@/lib/providers/openai";
 import { validateApiKey } from "@/lib/providerValidation";
 import {
-  clearPendingLinkCode,
   DEFAULT_BACKEND,
   getAnalyticsEnabled,
   getApiKey,
   getBackendConfig,
   getCustomProviders,
-  getPendingLinkCode,
   getRedactionEnabled,
   getRedactNamesEnabled,
   getTheme,
-  getWurkfloRemaining,
-  getWurkfloUser,
   removeCustomProvider,
   saveAnalyticsEnabled,
   saveApiKey,
@@ -45,10 +39,7 @@ import {
   saveRedactNamesEnabled,
   saveTheme,
   upsertCustomProvider,
-  type WurkfloUserSnapshot,
-  watchPendingLinkCode,
   watchTheme,
-  watchWurkfloUser,
 } from "@/lib/storage";
 import type { CustomProviderMeta, ProviderId, ThemeId } from "@/lib/types";
 
@@ -72,8 +63,19 @@ export default function App() {
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [wurkfloUser, setWurkfloUser] = useState<WurkfloUserSnapshot | null>(null);
-  const [wurkfloRemaining, setWurkfloRemainingState] = useState<number | null>(null);
+  const [codevuQuota, setCodevuQuota] = useState<{ used: number; limit: number } | null>(null);
+  const [codevuQuotaLoading, setCodevuQuotaLoading] = useState(false);
+
+  const refreshCodevuQuota = useCallback(async () => {
+    setCodevuQuotaLoading(true);
+    try {
+      const { getCodevuQuota } = await import("@/lib/codevu");
+      const quota = await getCodevuQuota();
+      setCodevuQuota(quota ? { used: quota.used, limit: quota.limit } : null);
+    } finally {
+      setCodevuQuotaLoading(false);
+    }
+  }, []);
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
   const baselineRef = useRef<string>("");
@@ -156,24 +158,13 @@ export default function App() {
     void saveAnalyticsEnabled(v);
   }, []);
 
-  // Wurkflo account: mirror snapshot + live updates while the page is open.
+  // Built-in backend quota: refresh on mount while the page is open.
   useEffect(() => {
-    void getWurkfloUser().then(setWurkfloUser);
-    void getWurkfloRemaining().then(setWurkfloRemainingState);
-    const unsubStorage = watchWurkfloUser(setWurkfloUser);
-    const unsubAuth = watchWurkfloAuth();
-    return () => {
-      unsubStorage();
-      unsubAuth();
-    };
-  }, []);
-
-  const {
-    linking,
-    linkError,
-    handleConnect: handleWurkfloConnect,
-    handleSignOut: handleWurkfloSignOut,
-  } = useWurkfloLink();
+    void (async () => {
+      const cfg = await getBackendConfig();
+      if (cfg.provider === "jot-api") void refreshCodevuQuota();
+    })();
+  }, [refreshCodevuQuota]);
 
   useEffect(() => {
     let cancelled = false;
@@ -462,52 +453,29 @@ export default function App() {
                       )}
                       {selected && a.id === "jot-api" && (
                         <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface-secondary/50 p-4">
-                          {wurkfloUser ? (
-                            <>
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-medium">{wurkfloUser.email}</p>
-                                  <p className="text-xs text-muted">
-                                    {wurkfloRemaining === null
-                                      ? "Signed in via Wurkflo"
-                                      : `${wurkfloRemaining} of 100 free requests left this month`}
-                                  </p>
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="secondary"
-                                  onPress={() => void handleWurkfloSignOut()}
-                                  aria-label="Sign out of Wurkflo"
-                                >
-                                  <LogOut className="size-3.5" />
-                                  Sign out
-                                </Button>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <p className="text-sm font-medium">Connect Jot Rewrite API from Wurkflo</p>
-                              <p className="text-xs text-muted">
-                                100 free requests per month, no API key required. A Wurkflo tab will open for you to
-                                sign in and approve the connection.
-                              </p>
-                              <Button size="sm" variant="primary" onPress={handleWurkfloConnect} className="self-start">
-                                <LogIn className="size-3.5" />
-                                Connect Jot Rewrite API from Wurkflo
-                              </Button>
-                              {linking && (
-                                <p className="inline-flex items-center gap-1.5 text-xs text-muted">
-                                  <Loader2 className="size-3 animate-spin" />
-                                  Finish connecting in the Wurkflo tab...
-                                </p>
-                              )}
-                              {linkError && (
-                                <p className="text-xs text-danger" role="alert">
-                                  {linkError}
-                                </p>
-                              )}
-                            </>
-                          )}
+                          <div>
+                            <p className="text-sm font-medium">Jot rewrite API</p>
+                            <p className="mt-1 text-xs text-muted">
+                              Built in. No sign-in, no API key. Text is rewritten through codevu.com with privacy
+                              redaction applied first.
+                            </p>
+                            <p className="mt-2 text-xs text-muted">
+                              {codevuQuotaLoading
+                                ? "Checking quota…"
+                                : codevuQuota
+                                  ? `${codevuQuota.limit - codevuQuota.used} of ${codevuQuota.limit} free requests left this month`
+                                  : "Quota will show after your first rewrite."}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="tertiary"
+                            onPress={() => void refreshCodevuQuota()}
+                            className="self-start"
+                            isDisabled={codevuQuotaLoading}
+                          >
+                            <RefreshCw className="size-3.5" /> Refresh quota
+                          </Button>
                         </div>
                       )}
                       {selected && a.id !== "jot-api" && (

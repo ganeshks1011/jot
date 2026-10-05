@@ -1,23 +1,20 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "wxt";
 
-/**
- * Point the extension at a non-production Wurkflo backend (e.g. a local
- * `react-router-serve` instance) by exporting VITE_WURKFLO_ORIGIN before
- * building. Also allow-lists that origin in web_accessible_resources so the
- * web app's redirect to auth-callback.html is permitted.
+/** Point the extension at a non-production codevu backend by exporting
+ * VITE_CODEVU_ORIGIN before building.
  */
-const wurkfloOrigin = process.env.VITE_WURKFLO_ORIGIN;
+const codevuOrigin = process.env.VITE_CODEVU_ORIGIN;
 
 export default defineConfig({
   srcDir: "src",
   modules: ["@wxt-dev/module-react"],
   vite: () => ({
     plugins: [tailwindcss()],
-    ...(wurkfloOrigin
+    ...(codevuOrigin
       ? {
           define: {
-            "import.meta.env.VITE_WURKFLO_ORIGIN": JSON.stringify(wurkfloOrigin),
+            "import.meta.env.VITE_CODEVU_ORIGIN": JSON.stringify(codevuOrigin),
           },
         }
       : {}),
@@ -47,8 +44,8 @@ export default defineConfig({
         description: "Toggle the Jot overlay on the focused field",
       },
     },
-    // Extension pages use Google Fonts (Poppins + Instrument Sans) to match
-    // wurkflo.app/jot — allow style/font from Google with fallback to system.
+    // Extension pages use Google Fonts (Poppins + Instrument Sans) — allow
+    // style/font from Google with fallback to system.
     // connect-src https: is needed for provider relays (DeepSeek, OpenAI, etc.).
     // Plaintext http is scoped to loopback hostnames for local model servers
     // (Ollama :11434, LM Studio :1234) so API keys never leave over cleartext
@@ -71,13 +68,6 @@ export default defineConfig({
         // run (file:// additionally requires the user's explicit toggle).
         resources: ["overlay.html"],
         matches: ["http://*/*", "https://*/*"],
-      },
-      {
-        // Landing page for the Wurkflo web auth handoff. Only the site that
-        // mints link codes may navigate here; no use_dynamic_url (it breaks
-        // chrome-extension:// redirects and origin validation).
-        resources: ["auth-callback.html"],
-        matches: ["https://wurkflo.app/*", ...(wurkfloOrigin ? [`${wurkfloOrigin}/*`] : [])],
       },
     ],
     icons: {

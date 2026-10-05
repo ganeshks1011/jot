@@ -1,3 +1,3 @@
-/** Single source for Wurkflo backend origin. Overridable via VITE_WURKFLO_ORIGIN for local QA. */
-export const WURKFLO_ORIGIN: string =
-  (import.meta.env.VITE_WURKFLO_ORIGIN as string | undefined) || "https://wurkflo.app";
+/** Single source for the codevu backend origin (the built-in Jot rewrite service). */
+export const CODEVU_ORIGIN: string =
+  (import.meta.env.VITE_CODEVU_ORIGIN as string | undefined) || "https://codevu.com";

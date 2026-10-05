@@ -60,8 +60,8 @@ async function reportAnalyticsEvent(envelope: {
     // measured durations win, otherwise the guide default.
     const engagement_time_msec =
       typeof clean.duration_ms === "number" ? clean.duration_ms : DEFAULT_ENGAGEMENT_TIME_MSEC;
-    const { WURKFLO_ORIGIN } = await import("@/lib/config");
-    await fetch(`${WURKFLO_ORIGIN}/api/jot/analytics`, {
+    const { CODEVU_ORIGIN } = await import("@/lib/config");
+    await fetch(`${CODEVU_ORIGIN}/api/jot/v1/analytics`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -98,10 +98,10 @@ async function activateJot(invocation: InvocationMethod): Promise<void> {
 
   // Gate: provider must be configured (Step 2 non-skippable). If not ready, open onboarding instead of injecting.
   try {
-    const { getBackendConfig, getApiKey, getWurkfloUser } = await import("@/lib/storage");
-    const [cfg, wurkUser] = await Promise.all([getBackendConfig(), getWurkfloUser()]);
+    const { getBackendConfig, getApiKey } = await import("@/lib/storage");
+    const cfg = await getBackendConfig();
     let isReady = false;
-    if (cfg.provider === "jot-api") isReady = !!wurkUser;
+    if (cfg.provider === "jot-api") isReady = true;
     else {
       const lower = (cfg.baseUrl ?? "").toLowerCase();
       if (lower.includes("localhost") || lower.includes("127.0.0.1") || lower.includes("::1")) isReady = true;
@@ -222,19 +222,6 @@ export default defineBackground(() => {
       return handleHttpRelay(message as HttpMessage);
     }
 
-    // Wurkflo token authority: the persisted session (lib/session.ts,
-    // chrome.storage.local) is readable here; the partitioned overlay
-    // iframe asks for a fresh ID token per rewrite.
-    if (type === "jot:wurkflo-token") {
-      return (async () => {
-        const { getSessionIdToken } = await import("@/lib/session");
-        const token = await getSessionIdToken();
-        return { ok: true as const, token };
-      })().catch((err: unknown) => ({
-        ok: false as const,
-        error: err instanceof Error ? err.message : "not-signed-in",
-      }));
-    }
   });
   async function handleHttpRelay(message: HttpMessage) {
     const { url, method, headers, body } = message;
