@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jot — Write it rough. Jot it right.</title>
+<meta name="description" content="Jot is a privacy-focused AI writing assistant for Chrome. Rewrite text where you already write — your PII never reaches the AI.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="hero">
+  <p class="kicker">Jot for Chrome</p>
+  <h1>Write it rough.<br>Jot it right.</h1>
+  <p class="sub">An AI writing assistant that works where you already write. Hit <kbd>Ctrl+Shift+Space</kbd> on any draft — Gmail, Slack, Reddit, LinkedIn — and get a clean rewrite. No tab switching. No pasting into ChatGPT.</p>
+  <a class="cta" href="https://chromewebstore.google.com/detail/jot/ocbfgpiibmgkkjbpbpnhejalpakdonjh">Get Jot for Chrome — Free</a>
+  <p class="fine">Free · No sign-in · No account</p>
+</header>
+
+<section class="privacy">
+  <h2>Your text stays yours.</h2>
+  <p>Before anything reaches an AI provider, Jot redacts sensitive information <strong>on your device</strong> — then restores it locally after the rewrite. The model only ever sees masked text.</p>
+  <div class="steps">
+    <div class="step">
+      <p class="step-label">1. Your text</p>
+      <p class="step-body">need to tell john@acme.com the refund was approved but his account is on hold and he can call me at 415-555-0182. make this sound professional</p>
+    </div>
+    <div class="step">
+      <p class="step-label">2. Redacted on device</p>
+      <p class="step-body"><mark>john@acme.com</mark> → [EMAIL_1] &nbsp; <mark>415-555-0182</mark> → [PHONE_1]<br>need to tell [EMAIL_1] the refund was approved but his account is on hold and he can call me at [PHONE_1]. make this sound professional</p>
+    </div>
+    <div class="step">
+      <p class="step-label">3. AI rewrite</p>
+      <p class="step-body">Please let [EMAIL_1] know the refund was approved, but the account remains on hold. They can contact me at [PHONE_1] if they have any questions.</p>
+    </div>
+    <div class="step">
+      <p class="step-label">4. Restored on device</p>
+      <p class="step-body">Please let john@acme.com know the refund was approved, but the account remains on hold. They can contact me at 415-555-0182 if they have any questions.</p>
+    </div>
+  </div>
+  <p class="fine">The AI sees the message. Not the sensitive details. <a href="privacy.html">Read the privacy policy</a>.</p>
+</section>
+
+<section class="features">
+  <h2>Built for how you actually write</h2>
+  <ul>
+    <li><strong>Works everywhere you type.</strong> Gmail, Slack, LinkedIn, Reddit, X, Facebook — anywhere there's a text box.</li>
+    <li><strong>Your model, your choice.</strong> Use the built-in model or bring your own key: OpenAI, Anthropic, Gemini, OpenRouter.</li>
+    <li><strong>Per-site voices.</strong> Sound professional in email, casual on Reddit — set a writing personality per website.</li>
+    <li><strong>Refine, don't restart.</strong> Iterate on a rewrite without starting over.</li>
+    <li><strong>Open source.</strong> Don't trust the privacy claim — <a href="https://github.com/ganeshks/jot">read the code</a>.</li>
+  </ul>
+</section>
+
+<section class="final-cta">
+  <h2>Stop pasting your emails into ChatGPT.</h2>
+  <a class="cta" href="https://chromewebstore.google.com/detail/jot/ocbfgpiibmgkkjbpbpnhejalpakdonjh">Get Jot for Chrome — Free</a>
+</section>
+
+<footer>
+  <p>Built by <a href="https://www.linkedin.com/in/ganeshks1011/">Ganesh</a> · <a href="privacy.html">Privacy</a> · <a href="https://github.com/ganeshks/jot">GitHub</a></p>
+</footer>
+
+</body>
+</html>

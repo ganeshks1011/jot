@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — Jot</title>
+<meta name="description" content="How Jot handles your information.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<main class="policy">
+  <p><a href="index.html">← Back to Jot</a></p>
+  <h1>Privacy Policy</h1>
+  <p class="fine">Last updated: September 26, 2026</p>
+
+  <h2>The short version</h2>
+  <p>Jot rewrites text you choose to rewrite. Before your text reaches any AI provider, sensitive details (emails, phone numbers, names, addresses) are redacted <strong>on your device</strong> and restored locally afterward. We do not store your text or your rewrites on our servers.</p>
+
+  <h2>1. Information the extension accesses</h2>
+  <p>When you trigger Jot (Ctrl+Shift+Space), the extension reads the text you have selected or are editing, so it can send it for rewriting. It does not read pages in the background, and it does not collect your browsing history.</p>
+  <p>Per the Chrome Web Store disclosure, the extension handles authentication information (only if you sign in to an optional account feature), personal communications (the text you ask it to rewrite), and website content (the page context needed to perform the rewrite).</p>
+
+  <h2>2. On-device PII redaction</h2>
+  <p>Before any text leaves your device, Jot detects and masks personally identifiable information — email addresses, phone numbers, person names, and street addresses — replacing them with placeholders (e.g. [EMAIL_1]). The AI provider only receives the redacted version. After the rewrite returns, the original values are restored locally in the extension. Redacted values are never transmitted.</p>
+
+  <h2>3. Where your text goes</h2>
+  <p>Your (redacted) text is sent to an AI provider to generate the rewrite:</p>
+  <ul>
+    <li><strong>Built-in model:</strong> sent to our inference service for processing. It is not stored and not used for training.</li>
+    <li><strong>Bring your own key:</strong> sent directly from your browser to the provider you configured (OpenAI, Anthropic, Gemini, or OpenRouter). Your text never passes through our servers in this mode. Your API key is stored locally in your browser.</li>
+  </ul>
+
+  <h2>4. What we store</h2>
+  <p>We do not store your text or rewritten content on our servers. Extension preferences (such as per-site writing voices and settings) are stored locally in your browser via Chrome storage. If you contact us for support, we retain only what you send us.</p>
+
+  <h2>5. What we don't do</h2>
+  <ul>
+    <li>We do not sell your data to third parties.</li>
+    <li>We do not use your text to train AI models.</li>
+    <li>We do not use tracking cookies or cross-site analytics.</li>
+  </ul>
+
+  <h2>6. Open source</h2>
+  <p>Jot is open source. The redaction and data-handling behavior described above can be independently verified in the public repository: <a href="https://github.com/ganeshks/jot">github.com/ganeshks/jot</a>.</p>
+
+  <h2>7. Changes to this policy</h2>
+  <p>We may update this policy from time to time. Material changes will be noted here with a revised date.</p>
+
+  <h2>8. Contact</h2>
+  <p>Questions about this policy or your data: contact Ganesh via <a href="https://www.linkedin.com/in/ganeshks1011/">LinkedIn</a>.</p>
+</main>
+
+<footer>
+  <p>Built by <a href="https://www.linkedin.com/in/ganeshks1011/">Ganesh</a> · <a href="index.html">Jot</a> · <a href="https://github.com/ganeshks/jot">GitHub</a></p>
+</footer>
+
+</body>
+</html>
