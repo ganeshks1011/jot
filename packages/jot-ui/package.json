@@ -1,0 +1,31 @@
+{
+  "name": "@wurkflo/jot-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Jot UI: design tokens, theme, and presentational components for the web app and the Jot extension. No chrome.* — storage arrives via injected repos.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "dependencies": {
+    "@heroui/react": "^3.2.2",
+    "@wurkflo/shared": "*",
+    "lucide-react": "^1.27.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.11"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}

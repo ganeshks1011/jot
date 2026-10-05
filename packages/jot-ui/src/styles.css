@@ -1,0 +1,156 @@
+/* Shared Jot theme: fonts, accent, brand chrome. Host apps @import
+   tailwindcss + @heroui/styles first, then this file. Light-first with
+   [data-theme="dark"] overrides — never dark-only. */
+
+:root {
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-jot: "Poppins", ui-sans-serif, system-ui, sans-serif;
+}
+
+:root,
+[data-theme="light"] {
+  --accent: oklch(0.6204 0.195 253.83);
+  --accent-foreground: oklch(0.99 0 0);
+  --jot-card-face: var(--surface);
+  --brand-gradient: linear-gradient(135deg, #ef4444, #7c3aed);
+}
+
+[data-theme="dark"] {
+  --accent: oklch(0.6204 0.195 253.83);
+  --accent-foreground: oklch(0.99 0 0);
+  --jot-card-face: var(--surface);
+  --brand-gradient: linear-gradient(135deg, #f87171, #8b5cf6);
+}
+
+.font-jot {
+  font-family: var(--font-jot);
+}
+
+/* Professional chrome: neutral face, gradient border only. Doubled class
+   beats single-class host component rules regardless of order (same
+   pattern as .jot-assistant below). */
+.jot-card-glow.jot-card-glow {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--jot-card-face, #fff), var(--jot-card-face, #fff)) padding-box,
+    var(--brand-gradient, linear-gradient(135deg, #7c3aed, #ef4444)) border-box;
+  box-shadow: var(--jot-shadow, 0 8px 30px rgb(0 0 0 / 0.18));
+  animation: none;
+}
+
+.jot-paired .jot-secondary {
+  color: color-mix(in srgb, var(--jot-cfg) 65%, var(--jot-cbg));
+}
+
+.jot-paired .jot-chrome,
+.jot-paired .jot-chrome button {
+  color: var(--jot-cfg);
+}
+
+/* Read-only preview: no focus ring (focus context lives in the composer). */
+#jot-content:focus,
+#jot-content:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+#jot-content {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--jot-cfg, inherit);
+  max-height: var(--jot-content-max, 38vh);
+  overflow-y: auto;
+  transition: height 180ms ease;
+}
+
+/* Restored list structure inside the HTML preview (preflight strips it). */
+#jot-content ul {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+#jot-content ol {
+  list-style: decimal;
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+#jot-content li {
+  margin: 0.125rem 0;
+}
+#jot-content p {
+  margin: 0.25rem 0;
+}
+#jot-content p:first-child,
+#jot-content ul:first-child,
+#jot-content ol:first-child {
+  margin-top: 0;
+}
+#jot-content p:last-child,
+#jot-content ul:last-child,
+#jot-content ol:last-child {
+  margin-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jot-card-glow,
+  #jot-content,
+  .jot-loading,
+  .jot-loading * {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* JotAssistant structural layout. These live here (unlayered) rather
+   than as Tailwind utilities because HeroUI component styles are
+   unlayered on full-bundle hosts, where layered utilities always lose
+   (header stacked vertically, padded text readout). Doubled classes beat
+   the single-class component rules by specificity on every host; values
+   mirror the extension overlay so both render one design. */
+.jot-assistant.jot-assistant {
+  gap: 0.5rem;
+  padding: 0.25rem 0.75rem 0.75rem;
+  border-radius: 8px;
+  overflow: visible;
+}
+.jot-assistant .card__header.card__header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.jot-assistant .card__content.card__content {
+  gap: 0.375rem;
+  padding-top: 0.25rem;
+}
+.jot-assistant .card__footer.card__footer {
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+/* Read-only result box and tweak input: ids land on the native elements,
+   so these beat the component field styles (bordered inputs) everywhere. */
+#jot-content {
+  border-width: 0;
+  background-color: transparent;
+  box-shadow: none;
+  min-height: 4rem;
+  padding-left: 0.25rem;
+  padding-right: 0.25rem;
+}
+#jot-feedback {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+/* Scroll-journey snap: applied to the document root while the landing is
+   mounted (it must live on the scroll container). Proximity only — free
+   scroll is never trapped. Disabled under reduced motion. */
+.jot-snap {
+  scroll-snap-type: y proximity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jot-snap {
+    scroll-snap-type: none;
+  }
+}
